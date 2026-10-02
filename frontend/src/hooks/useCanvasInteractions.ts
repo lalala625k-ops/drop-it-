@@ -203,6 +203,8 @@ export function useCanvasInteractions({
     onOpenPieMenu, onOpenGroupPieMenu, cardsRef, groupsRef, setSelectionRect, viewportRef]);
 
   useEffect(() => {
+    let panCommitTimer: number | null = null;
+    let panPreview: typeof viewportRef.current | null = null;
     const applyZoom = (clientX: number, clientY: number) => {
       const start = dragStartRef.current;
       const nextZoom = clamp(start.vpZoom * Math.exp((start.screenY - clientY) * 0.006), MIN_CANVAS_ZOOM, 3.0);
@@ -212,7 +214,7 @@ export function useCanvasInteractions({
         zoom: nextZoom,
       });
     };
-    const handleGlobalMouseMove = (e: MouseEvent) => {
+    const applyGlobalMouseMove = (e: MouseEvent) => {
       const mode = dragModeRef.current;
       if (!mode) return;
       const vp = viewportRef.current;
@@ -235,11 +237,20 @@ export function useCanvasInteractions({
       }
 
       if (mode === 'pan') {
-        setViewport({
+        const next = {
           ...vp,
           x: dragStartRef.current.vpX + (e.clientX - dragStartRef.current.screenX),
           y: dragStartRef.current.vpY + (e.clientY - dragStartRef.current.screenY),
-        });
+        };
+        viewportRef.current = next;
+        panPreview = next;
+        const surface = document.querySelector<HTMLElement>('[data-canvas-surface]');
+        if (surface) surface.style.transform = `translate(${next.x}px, ${next.y}px) scale(${next.zoom})`;
+        if (document.querySelector('.far-canvas')) setViewport(next);
+        else if (panCommitTimer === null) panCommitTimer = window.setTimeout(() => {
+          panCommitTimer = null;
+          if (panPreview) setViewport(panPreview);
+        }, 32);
         return;
       }
 
@@ -353,9 +364,32 @@ export function useCanvasInteractions({
       }
     };
 
+    let moveFrame: number | null = null;
+    let latestMove: MouseEvent | null = null;
+    const handleGlobalMouseMove = (event: MouseEvent) => {
+      latestMove = event;
+      if (moveFrame !== null) return;
+      moveFrame = window.requestAnimationFrame(() => {
+        moveFrame = null;
+        const current = latestMove;
+        latestMove = null;
+        if (current) applyGlobalMouseMove(current);
+      });
+    };
+
     const handleGlobalMouseUp = (e: MouseEvent) => {
+      if (moveFrame !== null) window.cancelAnimationFrame(moveFrame);
+      moveFrame = null;
+      latestMove = null;
+      if (dragModeRef.current && dragModeRef.current !== 'zoom') applyGlobalMouseMove(e);
       const mode = dragModeRef.current;
       dragModeRef.current = null;
+      if (mode === 'pan' && panPreview) {
+        if (panCommitTimer !== null) window.clearTimeout(panCommitTimer);
+        panCommitTimer = null;
+        setViewport(panPreview);
+        panPreview = null;
+      }
       setIsPanning(false);
       setIsZooming(false);
       setSelectionRect(null);
@@ -494,6 +528,8 @@ export function useCanvasInteractions({
       window.removeEventListener('mousemove', handleGlobalMouseMove);
       window.removeEventListener('mouseup', handleGlobalMouseUp);
       window.removeEventListener('blur', handleWindowBlur);
+      if (moveFrame !== null) window.cancelAnimationFrame(moveFrame);
+      if (panCommitTimer !== null) window.clearTimeout(panCommitTimer);
       if (zoomFrameRef.current !== null) window.cancelAnimationFrame(zoomFrameRef.current);
     };
   }, [

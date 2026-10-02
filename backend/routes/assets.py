@@ -3,10 +3,10 @@ import hashlib
 import base64
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+from backend.services.data_paths import ASSETS_DIR
 
 router = APIRouter(prefix="/api", tags=["assets"])
 
-ASSETS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "assets")
 os.makedirs(ASSETS_DIR, exist_ok=True)
 
 class Base64AssetPayload(BaseModel):

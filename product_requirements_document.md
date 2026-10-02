@@ -45,7 +45,7 @@
 | HTML 粘贴 | 作为 URL 提取补充，读取首个链接；普通网页链接的 HTML 预览图不覆盖链接识别。不进行富文本或 Markdown 正文渲染 |
 | 外部拖入 | 首个图片文件按自然比例创建图片卡，`.json` 备份执行导入；浏览器拖来的图片 URL 或 HTML 图片创建图片卡，普通 URL 创建网页卡，纯文本创建文本卡。其他文件类型暂不处理 |
 
-图片上传请求为 `POST /api/upload-asset`、JSON `{image: Base64}`。后端以 SHA256 前 16 个十六进制字符及扩展名命名去重，保存到 `backend/data/assets/`。网页封面通常仍为远程 URL；截图单独保存到 `backend/data/screenshots/`。上传成功不等于全部资源都可离线使用。
+图片上传请求为 `POST /api/upload-asset`、JSON `{image: Base64}`。后端以 SHA256 前 16 个十六进制字符及扩展名命名去重，Windows 运行数据保存到 `%LOCALAPPDATA%/InfiniteCanvasNote/data/assets/`；截图单独保存到同级 `screenshots/`。网页封面通常仍为远程 URL；上传成功不等于全部资源都可离线使用。
 
 ### 1.3 选中、移动、缩放和撤销
 
@@ -144,17 +144,17 @@ Group 只收纳卡片，不收纳圆形父物体。框选后 Ctrl+G 或画布命
 
 ### 2.1 保存链路
 
-操作更新 React 状态并在对应提交路径调用保存 → 立即写入带 `pendingSync` 标记的 `pinboard_cards_v1` → 400ms 防抖后异步 `POST /api/cards` 全量保存 → 后端写临时文件再原子替换 `backend/data/cards.json`。关闭前刷新待保存数据并尝试 `sendBeacon`。
+操作更新 React 状态并在对应提交路径调用保存 → 立即写入带 `pendingSync` 标记的 `pinboard_cards_v1` → 400ms 防抖后异步 `POST /api/cards/changes` 提交变更对象 → 后端校验基础修订号并写入 SQLite WAL。过期写入返回 409，本地待同步副本保留并提示手工处理冲突。
 
 | 数据 | 存储位置与边界 |
 | :--- | :--- |
-| 卡片/父物体/Group | LocalStorage 与后端 JSON；后端 POST 全量替换，没有版本冲突合并、失败重试队列或保存成功提示 |
+| 卡片/父物体/Group | LocalStorage 与本机后端 SQLite；按对象提交并校验修订号，没有自动冲突合并或保存成功提示 |
 | 大型 Base64 图片 | 本地写入异常时，重试副本会移除超过 50,000 字符的 Base64 `image`；新粘贴或拖入的图片另以卡片 ID 暂存 IndexedDB，刷新时恢复；IndexedDB 不可用时仍可能丢失离线图片 |
 | 上传图片 | `backend/data/assets/`，由 `/api/assets` 提供 |
 | 网页截图 | `backend/data/screenshots/`，由 `/api/screenshots` 提供 |
 | 视口 | `pinboard_viewport_v1`，200ms 防抖；只在浏览器保存 |
 
-本地资源 URL 依赖后端文件服务；纯前端可使用本地缓存中的文本等数据，但不保证离线图片、OCR、网页解析或所有未提交操作可用。原子替换降低写入中断损坏风险，不构成断电无损保证。
+本地资源 URL 依赖后端文件服务；纯前端可使用本地缓存中的文本等数据，但不保证离线图片、OCR、网页解析或所有未提交操作可用。SQLite WAL 降低写入中断损坏风险，不构成断电无损保证。
 
 ### 2.2 加载顺序
 
@@ -169,7 +169,7 @@ Group 只收纳卡片，不收纳圆形父物体。框选后 Ctrl+G 或画布命
 - 拖入 JSON 替换当前卡片、外层 Group 与父物体并重新全览，替换前记录撤销快照；当前没有文件选择器入口，也没有严格的导入字段校验。
 - JSON 保留卡片现有 `image` 值：尚未转存的 Base64 会随 JSON 导出，URL 指向的文件不会打包。完整迁移需另带 `assets/` 和 `screenshots/`；远程封面仍依赖原站。
 - 视口和固定画布背景未包含在 JSON 或后端数据中；Group 与父物体的颜色保存在 `groups` 中并随备份导出。旧卡片颜色字段可保留，但不影响主画布卡片外观。
-- `backup_database.bat` 在已经配置的 `backend/data/` 独立 Git 仓库执行 add、按需 commit、pull --rebase 和 push；脚本本身没有定时任务，也不是应用内自动多端同步。
+- `backup_database.bat` 从 SQLite 导出 JSON 快照和资源到已经配置的 `backend/data/` 独立 Git 仓库，再执行 add、按需 commit、pull --rebase 和 push；脚本本身没有定时任务，也不是应用内自动多端同步。
 
 ## 3. 视觉规范
 

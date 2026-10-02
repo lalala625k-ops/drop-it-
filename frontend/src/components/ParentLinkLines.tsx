@@ -41,50 +41,62 @@ export const ParentLinkLines: React.FC<ParentLinkLinesProps> = ({
   interactiveWire,
   visibleCardIdSet,
 }) => {
-  const links: {
+  const baseLinks = React.useMemo(() => {
+    const result: {
+      childId: string;
+      parentId: string;
     groupId: string;
     groupTitle: string;
     gx: number;
     gy: number;
     cx: number;
     cy: number;
-    isSelected: boolean;
-    isHighlighted: boolean;
     bundleMemberCount?: number;
-  }[] = [];
+    }[] = [];
 
-  const bundleIds = new Set(groups.filter((group) => group.kind === 'bundle').map((group) => group.id));
-  const selectedBranch = (id: string) => {
-    const seen = new Set<string>();
-    let current: string | null = id;
-    while (current && !seen.has(current)) {
-      if (selectedCardIds.has(current) || selectedGroupIds.has(current)) return true;
-      seen.add(current);
-      current = treeParentId(current, cards, groups);
+    const bundles = groups.filter((group) => group.kind === 'bundle');
+    const bundleIds = new Set(bundles.map((group) => group.id));
+    const memberCounts = new Map<string, number>();
+    for (const card of cards) if (card.bundleId) memberCounts.set(card.bundleId, (memberCounts.get(card.bundleId) || 0) + 1);
+    const addLink = (childId: string, parentId: string, bundle?: Group) => {
+      const endpoints = linkEndpoints(parentId, childId, cards, groups);
+      if (!endpoints) return;
+      result.push({ childId, parentId, groupId: parentId, groupTitle: '', gx: endpoints.start.x, gy: endpoints.start.y,
+        cx: endpoints.end.x, cy: endpoints.end.y,
+        bundleMemberCount: bundle ? memberCounts.get(bundle.id) || 0 : undefined });
+    };
+    for (const bundle of bundles) {
+      const parentId = getBundleParentIds(cards, bundle)[0];
+      if (parentId) addLink(bundle.id, parentId, bundle);
     }
-    return false;
-  };
-  const addLink = (childId: string, parentId: string, bundle?: Group) => {
-    const endpoints = linkEndpoints(parentId, childId, cards, groups);
-    if (!endpoints) return;
-    if (!bundle && visibleCardIdSet && !visibleCardIdSet.has(childId)
-      && !selectedCardIds.has(childId) && !selectedCardIds.has(parentId)
-      && !selectedGroupIds.has(parentId)) return;
-    const members = bundle ? cards.filter((card) => card.bundleId === bundle.id) : [];
-    const selected = selectedBranch(childId);
-    links.push({ groupId: parentId, groupTitle: '', gx: endpoints.start.x, gy: endpoints.start.y,
-      cx: endpoints.end.x, cy: endpoints.end.y, isSelected: selected,
-      isHighlighted: selected || dragOverGroupId === parentId || dragOverGroupId === childId,
-      bundleMemberCount: bundle ? members.length : undefined });
-  };
-  for (const bundle of groups.filter((group) => group.kind === 'bundle')) {
-    const parentId = getBundleParentIds(cards, bundle)[0];
-    if (parentId) addLink(bundle.id, parentId, bundle);
-  }
-  for (const card of cards) {
-    if (card.bundleId && bundleIds.has(card.bundleId)) continue;
-    if (card.groupId) addLink(card.id, card.groupId);
-  }
+    for (const card of cards) {
+      if (card.bundleId && bundleIds.has(card.bundleId)) continue;
+      if (card.groupId) addLink(card.id, card.groupId);
+    }
+    return result;
+  }, [cards, groups]);
+
+  const selectedBranches = React.useMemo(() => {
+    const selected = new Set<string>();
+    for (const link of baseLinks) {
+      const seen = new Set<string>();
+      let current: string | null = link.childId;
+      while (current && !seen.has(current)) {
+        if (selectedCardIds.has(current) || selectedGroupIds.has(current)) { selected.add(link.childId); break; }
+        seen.add(current);
+        current = treeParentId(current, cards, groups);
+      }
+    }
+    return selected;
+  }, [baseLinks, cards, groups, selectedCardIds, selectedGroupIds]);
+
+  const links = baseLinks.filter((link) => link.bundleMemberCount !== undefined || !visibleCardIdSet ||
+    visibleCardIdSet.has(link.childId) || selectedCardIds.has(link.childId) ||
+    selectedCardIds.has(link.parentId) || selectedGroupIds.has(link.parentId)).map((link) => ({
+      ...link,
+      isSelected: selectedBranches.has(link.childId),
+      isHighlighted: selectedBranches.has(link.childId) || dragOverGroupId === link.parentId || dragOverGroupId === link.childId,
+    }));
 
   if (links.length === 0 && !interactiveWire) return null;
 

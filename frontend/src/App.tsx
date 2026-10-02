@@ -4,6 +4,7 @@ import { CardComponent } from './components/CardComponent';
 import { GroupComponent } from './components/GroupComponent';
 import { BundleGroupComponent } from './components/BundleGroupComponent';
 import { ParentLinkLines } from './components/ParentLinkLines';
+import { FarCanvas } from './components/FarCanvas';
 import { ClipboardPastePreview } from './components/ClipboardPastePreview';
 import { SelectionBox } from './components/SelectionBox';
 import { SnapGuides } from './components/SnapGuides';
@@ -11,7 +12,7 @@ import { CanvasCommandMenu, CanvasCommand } from './components/CanvasCommandMenu
 import { CanvasModals } from './components/CanvasModals';
 
 import { computeCardFocusViewport } from './utils/canvas';
-import { exportBackup } from './utils/storage';
+import { exportBackup, getLocalData, getRemoteRevision, currentServerRevision } from './utils/storage';
 import { getParentLinkage } from './utils/groupRelations';
 
 import { useViewport } from './hooks/useViewport';
@@ -30,7 +31,7 @@ import { useCanvasDrop } from './hooks/useCanvasDrop';
 import { useCanvasActions } from './hooks/useCanvasActions';
 import { useCanvasInit } from './hooks/useCanvasInit';
 import { useVirtualViewport } from './hooks/useVirtualViewport';
-import { bundleBounds, bundleCollapsedHeight, bundleCollapsedWidth, useBundleGroups } from './hooks/useBundleGroups';
+import { bundleBoundsFromMembers, bundleCollapsedHeight, bundleCollapsedWidth, useBundleGroups } from './hooks/useBundleGroups';
 
 export default function App() {
   const [cards, setCards] = useState<Card[]>([]);
@@ -51,6 +52,22 @@ export default function App() {
     return () => {
       window.removeEventListener('mouseup', release);
       window.removeEventListener('blur', release);
+    };
+  }, []);
+
+  useEffect(() => {
+    const onConflict = () => window.alert('另一窗口已经修改画布。本窗口的修改已保存在本地，请先备份或刷新后处理冲突。');
+    const onFocus = async () => {
+      const revision = await getRemoteRevision();
+      if (revision === null || revision === currentServerRevision()) return;
+      if (getLocalData()?.pendingSync) { onConflict(); return; }
+      window.location.reload();
+    };
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('pinboard-sync-conflict', onConflict);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('pinboard-sync-conflict', onConflict);
     };
   }, []);
 
@@ -100,9 +117,19 @@ export default function App() {
     setSelectedGroupIds, zoomRef: viewportRef, pushHistory, showToast,
   });
 
+  const membersByBundle = useMemo(() => {
+    const result = new Map<string, Card[]>();
+    for (const card of cards) if (card.bundleId) {
+      const members = result.get(card.bundleId) || [];
+      members.push(card);
+      result.set(card.bundleId, members);
+    }
+    return result;
+  }, [cards]);
   const displayGroups = useMemo(() => groups.map((group) =>
-    group.kind === 'bundle' && !group.collapsed ? bundleBounds(cards, group.id, group) : group
-  ), [cards, groups]);
+    group.kind === 'bundle' && !group.collapsed
+      ? bundleBoundsFromMembers(membersByBundle.get(group.id) || [], group) : group
+  ), [groups, membersByBundle]);
   const collapsedIds = useMemo(() => new Set(groups.filter((group) => group.kind === 'bundle' && group.collapsed).map((group) => group.id)), [groups]);
   const canvasCards = useMemo(() => cards
     .filter((card) => !card.bundleId || !collapsedIds.has(card.bundleId))
@@ -203,6 +230,7 @@ export default function App() {
     highlightedGroupIds: parentHighlights.bundleIds,
     bufferPx: 300,
   });
+  const farMode = viewport.zoom < 0.18 && visibleCards.length > 150;
   const bundleContentScales = useMemo(() => new Map(groups
     .filter((group) => group.kind === 'bundle')
     .map((group) => [group.id, (group.outlinePadding ?? 18) / 18])), [groups]);
@@ -432,6 +460,7 @@ export default function App() {
         e.preventDefault();
       }}
     >
+      {farMode && <FarCanvas cards={visibleCards} groups={visibleGroups} viewport={viewport} />}
       <div
         data-canvas-surface
         className="absolute inset-0 origin-top-left pointer-events-auto"
@@ -450,11 +479,11 @@ export default function App() {
           visibleCardIdSet={visibleCardIdSet}
         />
 
-        {visibleGroups.filter((group) => group.kind === 'bundle').map((group) => (
+        {visibleGroups.filter((group) => group.kind === 'bundle' && (!farMode || selectedGroupIds.has(group.id))).map((group) => (
           <BundleGroupComponent
             key={group.id}
             group={group}
-            members={cards.filter((card) => card.bundleId === group.id)}
+            members={membersByBundle.get(group.id) || []}
             selected={selectedGroupIds.has(group.id) && pressedObject !== group.id}
             parentHighlighted={parentHighlights.bundleIds.has(group.id)}
             onDrag={(event) => canvasInteractions.handleStartGroupDrag(group, event)}
@@ -464,7 +493,7 @@ export default function App() {
           />
         ))}
 
-        {visibleGroups.filter((group) => group.kind !== 'bundle').map((group) => (
+        {visibleGroups.filter((group) => group.kind !== 'bundle' && (!farMode || selectedGroupIds.has(group.id))).map((group) => (
           <GroupComponent
             key={group.id}
             group={group}
@@ -477,7 +506,7 @@ export default function App() {
           />
         ))}
 
-        {visibleCards.map((card) => (
+        {visibleCards.filter((card) => !farMode || selectedCardIds.has(card.id)).map((card) => (
           <CardComponent
             key={card.id}
             card={card}

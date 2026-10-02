@@ -69,7 +69,10 @@ export function bundleResizeHandles(members: Card[], group: Group) {
 }
 
 export function bundleBounds(cards: Card[], bundleId: string, fallback: Group) {
-  const members = cards.filter((card) => card.bundleId === bundleId);
+  return bundleBoundsFromMembers(cards.filter((card) => card.bundleId === bundleId), fallback);
+}
+
+export function bundleBoundsFromMembers(members: Card[], fallback: Group) {
   if (!members.length) return fallback;
   const left = Math.min(...members.map((card) => card.x));
   const top = Math.min(...members.map((card) => card.y - cardHeaderReserve(card)));

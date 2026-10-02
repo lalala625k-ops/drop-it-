@@ -54,6 +54,14 @@ export function useCanvasInit({
       if (tree.changed || repairedScales) saveStateDebounced(initCards, normalizedGroups);
 
       const savedVp = getSavedViewport();
+      if (!localStorage.getItem('pinboard_migrated_viewport_applied')) {
+        void fetch('/api/migration/viewport').then((response) => response.json()).then((vp) => {
+          if (typeof vp.x === 'number' && typeof vp.y === 'number' && typeof vp.zoom === 'number') {
+            setViewport(vp);
+            localStorage.setItem('pinboard_migrated_viewport_applied', '1');
+          }
+        }).catch(() => {});
+      }
       if (!savedVp) {
         const folded = new Set(normalizedGroups.filter((g) => g.kind === 'bundle' && g.collapsed).map((g) => g.id));
         const fitCards = initCards.filter((card) => !card.bundleId || !folded.has(card.bundleId));

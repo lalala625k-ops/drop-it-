@@ -38,6 +38,24 @@ async function readPendingImage(id: string): Promise<string | null> {
   } catch { return null; }
 }
 
+export async function readAllPendingImages(): Promise<Record<string, string>> {
+  try {
+    const db = await openDatabase();
+    return await new Promise((resolve) => {
+      const result: Record<string, string> = {};
+      const request = db.transaction(STORE, 'readonly').objectStore(STORE).openCursor();
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (cursor) {
+          if (typeof cursor.value === 'string') result[String(cursor.key)] = cursor.value;
+          cursor.continue();
+        } else { db.close(); resolve(result); }
+      };
+      request.onerror = () => { db.close(); resolve(result); };
+    });
+  } catch { return {}; }
+}
+
 export async function restorePendingImages(cards: Card[]): Promise<Card[]> {
   return Promise.all(cards.map(async (card) => {
     if (card.type !== 'image' || card.image) return card;

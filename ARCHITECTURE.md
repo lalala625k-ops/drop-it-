@@ -2,9 +2,11 @@
 
 > **同步日期**：2026-10-02。本文说明当前工作区的结构、职责和数据流；产品行为见 `product_requirements_document.md`，视觉规则见 `DESIGN_SPEC.md`，站点保护范围见 `image_parsing_rules.md`。已知实现限制应明确记录，不能把计划能力写成已经实现。
 
+> **桌面版增量**：`desktop/` 包含 Electron 主进程与 Windows 安装配置；`build_desktop.ps1` 打包前端、FastAPI 可执行文件和安装包。Windows 运行数据位于 `%LOCALAPPDATA%/InfiniteCanvasNote/data`，`backend/services/storage.py` 用 SQLite WAL 和修订号保存对象，旧 `backend/data` 首次复制迁移。`backend/routes/migration.py` 接收原浏览器中的待同步数据与视口。`frontend/src/utils/storage.ts` 按对象提交并阻止过期修订号覆盖；`useVirtualViewport.ts` 使用空间索引，远景可由 `FarCanvas.tsx` 绘制简化卡片。使用方式与限制见 `DESKTOP.md`。
+
 ## 1. 架构与维护原则
 
-- 前端为 React 18 + TypeScript + Vite + Tailwind CSS；画布由 DOM 的位移/缩放实现，连线与外层 Group 轮廓使用 SVG。后端为 FastAPI，卡片、外层 Group 与圆形父物体以 JSON 全量保存。
+- 前端为 React 18 + TypeScript + Vite + Tailwind CSS；近景画布由 DOM 的位移/缩放实现，远景大量对象用 Canvas 简化绘制，连线与外层 Group 轮廓使用 SVG。后端为 FastAPI，卡片、外层 Group 与圆形父物体保存在 SQLite。
 - `components/` 负责呈现和事件绑定，部分组件仍包含局部编辑状态；跨组件业务状态与交互调度放在 `hooks/`，几何和字符串计算放在 `utils/`。
 - `utils/storage.ts` 是有副作用的存储适配器，包含 LocalStorage、网络请求及文件导入导出；其他计算工具应保持纯函数，不依赖 React Hook。
 - 新增模块尽量控制在 150～200 行。现有 App、交互 Hook、轮盘和正文组件等仍超过这一目标，后续修改时按职责逐步拆分。
@@ -18,7 +20,7 @@
 | `DESIGN_SPEC.md` | 默认视觉规则、主题色、标题字阶及实现差异 |
 | `image_parsing_rules.md` | 保护库、试验库、通用解析规则及迁移流程 |
 | `run_app.bat` | 启动 Vite（5173）和 Uvicorn（127.0.0.1:8000），打开浏览器 |
-| `backup_database.bat` | 在 `backend/data/` 的独立 Git 仓库中暂存、按需提交、拉取并推送 `origin/main`；需要预先配置数据仓库和远程访问 |
+| `backup_database.bat` | 从 SQLite 导出一致的 JSON 和资源到 `backend/data/` 独立 Git 仓库，再提交、拉取并推送 `origin/main` |
 | `.gitignore` | 忽略依赖、构建输出、Python 缓存及独立管理的 `backend/data/` |
 | `.agents/`、`skills/` | 项目工作流技能与参考材料，包括代码精简技能 |
 | `frontend/package.json` | 依赖；`dev`、`build`（tsc + Vite）、`preview` 命令 |
@@ -57,7 +59,7 @@
 | `treeTargets.ts` | Ctrl+Shift 引线连接时查找卡片、外层 Group、圆形父物体目标与中心点 |
 | `groupColors.ts` | 四个渐变节点、连续取色插值及文字对比色计算 |
 | `pieMenuGeometry.ts` | 对象与空白画布菜单共用的边缘定位、钟面坐标、右键划动阈值和方向扇区命中 |
-| `storage.ts` | 引导卡片、立即写入带待同步标记的 LocalStorage、400ms 防抖及顺序后端同步、刷新恢复、JSON 导入导出 |
+| `storage.ts` | 引导卡片、立即写入带待同步标记的 LocalStorage、400ms 防抖及按对象修订号同步、刷新恢复、JSON 导入导出 |
 | `pendingImages.ts` | 在 IndexedDB 按卡片 ID 暂存原始图片，刷新时恢复因 LocalStorage 容量限制剥离的 Base64 图片 |
 | `ingestScreenshot.ts` | 粘贴/拖入图片时立即建卡并暂存原图，异步上传成功后换成持久资源地址；原图等待用户从右键菜单选择识别方式 |
 | `recognizeCardImage.ts` | 图片卡右键 OCR/原链接识别请求及转换字段；原链接未命中时保留图片 |
@@ -67,7 +69,7 @@
 | 文件 | 职责 |
 | :--- | :--- |
 | `useViewport.ts` | 视口和光标坐标、每档上滚 1.12 倍/下滚 0.88 倍的指针锚定缩放、单卡聚焦/还原、全览；以 `pinboard_viewport_v1`、200ms 防抖记忆视口 |
-| `useVirtualViewport.ts` | 未收起卡片超过 40 张或 Group/父物体超过 10 个时裁剪离屏对象；300 屏幕像素缓冲，选中对象和选中父物体的关联对象始终保留；返回可见卡片 ID 供连线裁剪 |
+| `useVirtualViewport.ts` | 未收起卡片超过 40 张或 Group/父物体超过 10 个时通过空间索引裁剪离屏对象；300 屏幕像素缓冲，选中对象和关联对象始终保留；返回可见卡片 ID 供连线裁剪 |
 | `useCanvasInteractions.ts` | 鼠标手势状态机：平移、Alt+中键指针锚定连续缩放、框选、拖动、Ctrl+Shift 引线连接或单击断开、卡片缩放、轮盘；卡片与外层 Group 可连到卡片、Group 或圆形父物体，拒绝成环；普通拖动带动自身后代，Ctrl 拖动只移动当前对象（Group 含成员） |
 | `useCanvasActions.ts` | 新建、更新、删除、解散、编组、撤销、装箱、方向对齐、组外卡片恢复默认尺寸及全部卡片按平均宽度统一宽度；选中外层 Group 时展开成员卡片参与对齐，重算并保存组边界；`commitState` 更新卡片/父物体并排队保存 |
 | `useCanvasInit.ts` | 加载时把旧多父关系收敛为单父树，修正 Group 成员的文字缩放比例，保持旧父物体中心并统一尺寸为 120px；恢复视口或全览；注册关闭前刷新 |
@@ -117,10 +119,10 @@
 | 文件/目录 | 职责 |
 | :--- | :--- |
 | `main.py` | FastAPI/CORS、三个路由模块及 `/api/assets`、`/api/screenshots` 静态目录 |
-| `routes/cards.py` | CardModel、GroupModel、PersistencePayload；GET 全量读取，POST 全量替换保存 |
+| `routes/cards.py` | CardModel、GroupModel、PersistencePayload；GET 全量读取，POST 按对象保存并校验基础修订号 |
 | `routes/assets.py` | POST `/api/upload-asset`；Base64 解码，取 SHA256 前 16 个十六进制字符命名去重，返回静态 URL |
 | `routes/parser.py` | POST `/api/recognize-image` 和 `/api/resolve-image` 支持上传文件、Base64 JSON、原始请求体；GET `/api/fetch-metadata` |
-| `services/storage.py` | 读写 `cards.json`，兼容旧数组格式；写 `.tmp` 后 `os.replace` |
+| `services/storage.py` | SQLite WAL 对象存储、修订号校验、旧 JSON 迁移及 Git 快照导出 |
 | `services/ocr_service.py` | RapidOCR 初始化、Pillow 预处理、首行标题和全文；不可用或出错时返回失败结果 |
 | `services/screenshot_link_service.py` | 从 OCR 文本提取 B 站/X 直接链接或 BV 号，并保守校验网页搜索结果 |
 | `services/bilibili_reverse_service.py` | 按 OCR 坐标分别提取电脑端截图和手机竖屏截图的标题、UP 主及可见时长；通过 B 站视频搜索、综合搜索回退、失败页重试和进程内已核实结果缓存查找候选，再按标题/作者/时长评分；与受保护的正向解析器独立 |
@@ -140,14 +142,14 @@
 | `services/scrapers/experimental/__init__.py` | 注册飞书试验解析器 |
 | `services/scrapers/experimental/feishu.py` | E-001：飞书/Lark 文档标题识别，统一返回无封面信息卡 |
 | `tests/test_protected_scrapers.py` | 保护状态、URL 匹配、注册列表等断言；线上有效性仍需真实 URL 验证 |
-| `data/cards.json` | 卡片和父物体全量数据 |
+| `data/cards.json` | 旧版数据与独立 Git 备份快照；Windows 运行数据位于 `%LOCALAPPDATA%/InfiniteCanvasNote/data/board.sqlite3` |
 | `data/assets/` | 上传图片二进制文件 |
 | `data/screenshots/` | 网页截图缓存 |
 
 ## 5. 数据流与修改联动
 
 1. **加载**：未同步的本地变更优先恢复，否则读取后端非空数据；失败或为空时读取本地缓存，再降级到引导卡片。启动时规范化树连接和圆形父物体尺寸，外层 Group 保留原尺寸与收起状态；视口单独恢复。
-2. **保存**：卡片及父物体拖动松手调用 `commitState`；外层 Group 操作调用 `saveStateDebounced`；立即写入带待同步标记的本地数据，400ms 防抖后异步 POST 全量数据。关闭前调用 `flushStoredCards` 并尝试 beacon。父物体双击就地重命名仍缺少独立保存调用；后端全量保存错误当前静默处理，没有版本冲突合并或可靠重试队列。
+2. **保存**：卡片及父物体拖动松手调用 `commitState`；外层 Group 操作调用 `saveStateDebounced`；立即写入带待同步标记的本地数据，400ms 防抖后异步 POST 变更对象。后端比较基础修订号，过期写入返回 409；本地副本保留并提示用户手工处理冲突。当前没有自动合并或跨设备同步。
 3. **图片**：粘贴/拖入先在 IndexedDB 暂存并创建 Base64 图片卡，再异步上传，成功后换成 URL；后端断开时保留本地图片。图片右键菜单选择 OCR 时转文本；选择恢复 B 站/X 原链接时，命中则转网页卡，未命中则保留原图并提示。本地写入失败时仍会尝试剥离超过 50,000 字符的 Base64 图片，加载时从 IndexedDB 补回。
 4. **设置**：`pinboard_viewport_v1` 仅存浏览器，不包含在后端数据及 JSON 导出中。画布和主画布卡片使用固定配色；Group/父物体的 `color` 随 `groups` 写入本地、后端和 JSON 备份，旧卡片颜色字段保留兼容但不参与主画布卡片绘制。
 5. **备份**：JSON 导出 `{cards, groups}`，保留现有 `image` 值（URL 或 Base64），不打包 URL 指向文件。迁移须另带 `assets/`、`screenshots/`；远程图片仍依赖原站。

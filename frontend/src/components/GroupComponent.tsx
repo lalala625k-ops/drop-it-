@@ -12,7 +12,7 @@ interface GroupComponentProps {
   onUngroup?: (id: string) => void;
 }
 
-export const GroupComponent: React.FC<GroupComponentProps> = ({
+const GroupComponentInner: React.FC<GroupComponentProps> = ({
   group,
   isSelected,
   childCount,
@@ -148,3 +148,7 @@ export const GroupComponent: React.FC<GroupComponentProps> = ({
     </div>
   );
 };
+
+export const GroupComponent = React.memo(GroupComponentInner, (previous, next) =>
+  previous.group === next.group && previous.isSelected === next.isSelected &&
+  previous.childCount === next.childCount && previous.isDragOver === next.isDragOver);

@@ -3,6 +3,7 @@ import { Card, Group, Viewport } from '../types';
 import { bundleCollapsedHeight, bundleCollapsedWidth } from './useBundleGroups';
 import { MIN_CANVAS_ZOOM } from '../utils/canvas';
 import { cardVisualBounds } from '../utils/cardBounds';
+import { SpatialIndex } from '../utils/spatialIndex';
 
 interface UseVirtualViewportProps {
   viewport: Viewport;
@@ -25,6 +26,18 @@ export function useVirtualViewport({
   highlightedGroupIds,
   bufferPx = 300,
 }: UseVirtualViewportProps) {
+  const membersByBundle = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const card of cards) if (card.bundleId) counts.set(card.bundleId, (counts.get(card.bundleId) || 0) + 1);
+    return counts;
+  }, [cards]);
+  const cardIndex = useMemo(() => new SpatialIndex(cards, cardVisualBounds), [cards]);
+  const groupBounds = (g: Group) => ({
+    x: g.x, y: g.y,
+    width: g.kind === 'bundle' && g.collapsed ? bundleCollapsedWidth(g.width) : (g.width || 120),
+    height: g.kind === 'bundle' && g.collapsed ? bundleCollapsedHeight(membersByBundle.get(g.id) || 0) : (g.height || 120),
+  });
+  const groupIndex = useMemo(() => new SpatialIndex(groups, groupBounds), [groups, membersByBundle]);
   return useMemo(() => {
     // If cards count is small (<50), culling overhead is unnecessary
     if (cards.length <= 40 && groups.length <= 10) {
@@ -50,8 +63,10 @@ export function useVirtualViewport({
     const visibleCards: Card[] = [];
     const visibleCardIdSet = new Set<string>();
 
-    for (let i = 0; i < cards.length; i++) {
-      const c = cards[i];
+    const query = { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+    const candidates = new Map(cardIndex.query(query).map((card) => [card.id, card]));
+    for (const card of cards) if (selectedCardIds.has(card.id) || highlightedCardIds?.has(card.id)) candidates.set(card.id, card);
+    for (const c of candidates.values()) {
       const bounds = cardVisualBounds(c);
       // Always include selected cards so dragging never vanishes
       const isSelected = selectedCardIds.has(c.id) || !!highlightedCardIds?.has(c.id);
@@ -69,10 +84,10 @@ export function useVirtualViewport({
     }
 
     const visibleGroups: Group[] = [];
-    for (let i = 0; i < groups.length; i++) {
-      const g = groups[i];
-      const gWidth = g.kind === 'bundle' && g.collapsed ? bundleCollapsedWidth(g.width) : (g.width || 120);
-      const gHeight = g.kind === 'bundle' && g.collapsed ? bundleCollapsedHeight(cards.filter((card) => card.bundleId === g.id).length) : (g.height || 120);
+    const groupCandidates = new Map(groupIndex.query(query).map((group) => [group.id, group]));
+    for (const group of groups) if (selectedGroupIds.has(group.id) || highlightedGroupIds?.has(group.id)) groupCandidates.set(group.id, group);
+    for (const g of groupCandidates.values()) {
+      const { width: gWidth, height: gHeight } = groupBounds(g);
       const isSelected = selectedGroupIds.has(g.id) || !!highlightedGroupIds?.has(g.id);
       const isVisible =
         isSelected ||
@@ -103,5 +118,7 @@ export function useVirtualViewport({
     highlightedCardIds,
     highlightedGroupIds,
     bufferPx,
+    cardIndex,
+    groupIndex,
   ]);
 }

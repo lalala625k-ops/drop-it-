@@ -1,7 +1,7 @@
 from typing import List, Optional
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from backend.services.storage import load_data_from_disk, save_data_to_disk
+from backend.services.storage import load_data_from_disk, get_revision as read_revision, apply_changes, replace_all, RevisionConflict
 
 router = APIRouter(prefix="/api/cards", tags=["cards"])
 
@@ -53,6 +53,14 @@ class GroupModel(BaseModel):
 class PersistencePayload(BaseModel):
     cards: List[CardModel]
     groups: Optional[List[GroupModel]] = []
+    baseRevision: int
+
+class ChangesPayload(BaseModel):
+    baseRevision: int
+    upsertCards: List[CardModel] = []
+    upsertGroups: List[GroupModel] = []
+    deleteCardIds: List[str] = []
+    deleteGroupIds: List[str] = []
 
 @router.get("")
 async def get_cards():
@@ -64,5 +72,25 @@ async def save_cards(payload: PersistencePayload):
         "cards": [card.model_dump() for card in payload.cards],
         "groups": [group.model_dump() for group in (payload.groups or [])],
     }
-    save_data_to_disk(data)
-    return {"success": True, "count": len(payload.cards)}
+    try:
+        revision = replace_all(payload.baseRevision, data)
+    except RevisionConflict:
+        raise HTTPException(status_code=409, detail="Board changed in another window")
+    return {"success": True, "count": len(payload.cards), "revision": revision}
+
+@router.post("/changes")
+async def save_changes(payload: ChangesPayload):
+    try:
+        revision = apply_changes(
+            payload.baseRevision,
+            [card.model_dump() for card in payload.upsertCards],
+            [group.model_dump() for group in payload.upsertGroups],
+            payload.deleteCardIds, payload.deleteGroupIds,
+        )
+    except RevisionConflict:
+        raise HTTPException(status_code=409, detail="Board changed in another window")
+    return {"success": True, "revision": revision}
+
+@router.get("/revision")
+async def get_revision():
+    return {"revision": read_revision()}

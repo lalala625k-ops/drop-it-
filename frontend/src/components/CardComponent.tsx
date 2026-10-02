@@ -173,4 +173,10 @@ const CardComponentInner: React.FC<CardComponentProps> = ({
   );
 };
 
-export const CardComponent = memo(CardComponentInner);
+export const CardComponent = memo(CardComponentInner, (previous, next) =>
+  previous.card === next.card &&
+  previous.isSelected === next.isSelected &&
+  previous.showSelectionControls === next.showSelectionControls &&
+  previous.parentHighlighted === next.parentHighlighted &&
+  previous.contentScale === next.contentScale &&
+  previous.zoom === next.zoom);

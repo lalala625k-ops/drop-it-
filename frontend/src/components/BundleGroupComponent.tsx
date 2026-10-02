@@ -37,7 +37,7 @@ const memberTitle = (card: Card) => {
   return title || (card.type === 'web' ? '网页' : card.type === 'image' ? '图片' : '便签');
 };
 
-export const BundleGroupComponent: React.FC<Props> = ({ group, members, selected, parentHighlighted = false, onDrag, onResize, onToggle, onOpenPieMenu }) => {
+const BundleGroupComponentInner: React.FC<Props> = ({ group, members, selected, parentHighlighted = false, onDrag, onResize, onToggle, onOpenPieMenu }) => {
   const tags = group.tags || [];
   const collapsed = !!group.collapsed;
   const parsedTitle = parseMarkdownHeading(group.title);
@@ -116,3 +116,7 @@ export const BundleGroupComponent: React.FC<Props> = ({ group, members, selected
     </div>}
   </div>;
 };
+
+export const BundleGroupComponent = React.memo(BundleGroupComponentInner, (previous, next) =>
+  previous.group === next.group && previous.members === next.members &&
+  previous.selected === next.selected && previous.parentHighlighted === next.parentHighlighted);

@@ -3,8 +3,8 @@ import hashlib
 import socket
 import subprocess
 from typing import Optional
+from backend.services.data_paths import SCREENSHOTS_DIR
 
-SCREENSHOTS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "screenshots")
 os.makedirs(SCREENSHOTS_DIR, exist_ok=True)
 
 def detect_local_proxy() -> Optional[str]:

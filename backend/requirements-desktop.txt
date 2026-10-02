@@ -1,0 +1,9 @@
+fastapi==0.141.1
+uvicorn==0.52.4
+pydantic==2.13.5
+rapidocr-onnxruntime==1.2.3
+Pillow==12.3.0
+requests==2.34.2
+beautifulsoup4==4.15.0
+python-multipart==0.0.32
+pyinstaller>=6.16,<7
