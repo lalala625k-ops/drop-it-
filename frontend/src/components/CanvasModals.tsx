@@ -1,9 +1,11 @@
 import React from 'react';
 import { Card, Group, Viewport } from '../types';
-import { PieDateMenu } from './PieDateMenu';
+import { PieDateMenu, PieMenuTarget } from './PieDateMenu';
+import { PieMenuFocusOverlay } from './PieMenuFocusOverlay';
 import { SearchModal } from './SearchModal';
 import { MinimapNav } from './MinimapNav';
 import { ActivePieMenuState } from '../hooks/usePieMenuState';
+import { getBundleParentIds } from '../utils/groupRelations';
 
 interface CanvasModalsProps {
   cards: Card[];
@@ -21,6 +23,7 @@ interface CanvasModalsProps {
   onReparseLink: (cardId: string) => void;
   onRecognizeImage: (cardId: string, mode: 'ocr' | 'link') => void;
   onUngroupBundle: (bundleId: string) => void;
+  onResetObjectSize: (id: string) => void;
   onDissolveParent: (parentId: string) => void;
   onDetachCardFromBundle: (cardId: string) => void;
   onDisconnectCardParent: (cardId: string) => void;
@@ -48,6 +51,7 @@ export const CanvasModals: React.FC<CanvasModalsProps> = ({
   onReparseLink,
   onRecognizeImage,
   onUngroupBundle,
+  onResetObjectSize,
   onDissolveParent,
   onDetachCardFromBundle,
   onDisconnectCardParent,
@@ -58,45 +62,50 @@ export const CanvasModals: React.FC<CanvasModalsProps> = ({
   onSelectSearchCard,
   isMinimapExpanded,
 }) => {
+  const menuSource = activePieMenu?.target;
+  const menuTarget: PieMenuTarget | null = !menuSource ? null
+    : menuSource.kind === 'card'
+      ? { kind: 'card', card: cards.find((card) => card.id === menuSource.card.id)
+        || menuSource.card }
+      : { kind: menuSource.kind,
+          group: groups.find((group) => group.id === menuSource.group.id)
+            || menuSource.group };
+  const menuId = menuTarget?.kind === 'card' ? menuTarget.card.id : menuTarget?.group.id;
+  const bundleParentId = menuTarget?.kind === 'bundle'
+    ? getBundleParentIds(cards, menuTarget.group)[0] : null;
   return (
     <>
-      {activePieMenu && (
+      {activePieMenu && menuTarget && menuId && (
+        <>
+        <PieMenuFocusOverlay activePieMenu={activePieMenu} cards={cards} viewport={viewport} />
         <PieDateMenu
-          card={activePieMenu.groupId
-            ? { ...activePieMenu.card, title: groups.find((g) => g.id === activePieMenu.groupId)?.title || activePieMenu.card.title,
-                headerTitle: groups.find((g) => g.id === activePieMenu.groupId)?.title || activePieMenu.card.headerTitle,
-                reminder: groups.find((g) => g.id === activePieMenu.groupId)?.reminder,
-                tags: groups.find((g) => g.id === activePieMenu.groupId)?.tags || [] }
-            : cards.find((c) => c.id === activePieMenu.card.id) || activePieMenu.card}
-          groupKind={activePieMenu.groupId
-            ? groups.find((group) => group.id === activePieMenu.groupId)?.kind === 'bundle' ? 'bundle' : 'parent'
-            : undefined}
+          target={menuTarget}
+          parentId={bundleParentId}
           allCards={cards}
           centerPosition={activePieMenu.center}
           currentPointerPosition={activePieMenu.pointer}
           isRightMouseDown={activePieMenu.isRightMouseDown}
-          onConfirmDate={(dateStr) => onConfirmPieDate(activePieMenu.card.id, dateStr)}
-          onConfirmTitle={(title) => onConfirmPieTitle(activePieMenu.card.id, title)}
-          onToggleTag={(tag) => onTogglePieTag(activePieMenu.card.id, tag)}
-          groupColor={activePieMenu.groupId ? groups.find((g) => g.id === activePieMenu.groupId)?.color : undefined}
-          onGroupColor={(color) => { if (activePieMenu.groupId) onGroupColor(activePieMenu.groupId, color); }}
-          onReparseLink={() => onReparseLink(activePieMenu.card.id)}
-          onRecognizeImage={(mode) => onRecognizeImage(activePieMenu.card.id, mode)}
+          onConfirmDate={(dateStr) => onConfirmPieDate(menuId, dateStr)}
+          onConfirmTitle={(title) => onConfirmPieTitle(menuId, title)}
+          onToggleTag={(tag) => onTogglePieTag(menuId, tag)}
+          onGroupColor={(color) => { if (menuTarget.kind === 'parent') onGroupColor(menuId, color); }}
+          onReparseLink={() => onReparseLink(menuId)}
+          onRecognizeImage={(mode) => onRecognizeImage(menuId, mode)}
           onUngroup={() => {
-            if (activePieMenu.groupId) {
-              const group = groups.find((item) => item.id === activePieMenu.groupId);
-              if (group?.kind === 'bundle') onUngroupBundle(group.id);
-              else if (group) onDissolveParent(group.id);
-            }
+            if (menuTarget.kind === 'bundle') onUngroupBundle(menuId);
+            else if (menuTarget.kind === 'parent') onDissolveParent(menuId);
             onClosePieMenu();
           }}
-          onDetachFromBundle={() => { onDetachCardFromBundle(activePieMenu.card.id); onClosePieMenu(); }}
-          onDisconnectCardParent={() => { onDisconnectCardParent(activePieMenu.card.id); onClosePieMenu(); }}
-          groupConnections={activePieMenu.groupId ? [...new Set(cards.filter((card) => card.bundleId === activePieMenu.groupId && card.groupId).map((card) => card.groupId!))]
-            .map((id) => ({ id, title: groups.find((group) => group.id === id)?.title || '' })) : undefined}
-          onDisconnectGroupParent={(parentId) => { if (activePieMenu.groupId) onDisconnectGroupParent(activePieMenu.groupId, parentId); onClosePieMenu(); }}
+          onResetSize={() => { onResetObjectSize(menuId); onClosePieMenu(); }}
+          onDetachFromBundle={() => { if (menuTarget.kind === 'card') onDetachCardFromBundle(menuId); onClosePieMenu(); }}
+          onDisconnectParent={() => {
+            if (menuTarget.kind === 'card') onDisconnectCardParent(menuId);
+            else if (menuTarget.kind === 'bundle' && bundleParentId) onDisconnectGroupParent(menuId, bundleParentId);
+            onClosePieMenu();
+          }}
           onClose={onClosePieMenu}
         />
+        </>
       )}
 
       <SearchModal

@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Card } from '../types';
 import { parseReminderDate, ParsedDateResult } from '../utils/dateParser';
 
 interface PieDateInputModalProps {
-  card: Card;
+  reminder?: string | null;
   position: { x: number; y: number };
   onConfirm: (dateStr: string) => void;
   onClearDate: () => void;
@@ -12,14 +11,14 @@ interface PieDateInputModalProps {
 }
 
 export const PieDateInputModal: React.FC<PieDateInputModalProps> = ({
-  card,
+  reminder,
   position,
   onConfirm,
   onClearDate,
   onBackToPie,
   onClose,
 }) => {
-  const [dateInput, setDateInput] = useState(card.reminder || '');
+  const [dateInput, setDateInput] = useState(reminder || '');
   const [parseResult, setParseResult] = useState<ParsedDateResult>({
     isValid: false,
     parsedDate: null,
@@ -81,9 +80,9 @@ export const PieDateInputModal: React.FC<PieDateInputModalProps> = ({
         <div>
           <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-[0.05em] text-ink/60 mb-1.5">
             <span>输入年月日 (缺省年默认今年)</span>
-            {card.reminder && (
-              <span className="text-ink/60 font-mono truncate max-w-[120px]" title={card.reminder}>
-                当前: {card.reminder}
+            {reminder && (
+              <span className="text-ink/60 font-mono truncate max-w-[120px]" title={reminder}>
+                当前: {reminder}
               </span>
             )}
           </div>
@@ -133,7 +132,7 @@ export const PieDateInputModal: React.FC<PieDateInputModalProps> = ({
         {/* Action Buttons */}
         <div className="flex items-center justify-between pt-2">
           <div>
-            {card.reminder && (
+            {reminder && (
               <button
                 type="button"
                 onClick={onClearDate}

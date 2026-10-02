@@ -1,33 +1,65 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Card } from '../../types';
+import { isFeishuUrl } from '../../utils/feishu';
+import { FeishuLogo } from '../FeishuLogo';
+import { textCardSize } from '../../utils/textCardSize';
 
 interface CardBodyContentProps {
   card: Card;
   isSelected: boolean;
   onUpdate: (id: string, updates: Partial<Card>) => void;
+  onTextEdit: (id: string, updates: Partial<Card>) => void;
+  onTextEditStart: () => void;
   onWebLinkClick: (e: React.MouseEvent) => void;
+  contentScale: number;
 }
 
 export const CardBodyContent: React.FC<CardBodyContentProps> = ({
   card,
   isSelected,
   onUpdate,
+  onTextEdit,
+  onTextEditStart,
   onWebLinkClick,
+  contentScale,
 }) => {
-  const [isEditingText, setIsEditingText] = useState(false);
-  const [textContent, setTextContent] = useState(card.content || '');
   const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [textEditorEpoch, setTextEditorEpoch] = useState(0);
   const [titleText, setTitleText] = useState(card.title || '');
   const [imgLoadError, setImgLoadError] = useState(false);
+  const isFeishu = card.type === 'web' && isFeishuUrl(card.url);
 
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const footerRef = useRef<HTMLDivElement>(null);
   const adjustedKeyRef = useRef<string | null>(null);
+  const textInputRef = useRef<HTMLTextAreaElement>(null);
+
+  const finishTextEdit = (content: string) => {
+    if (card.type !== 'text') return;
+    const size = textCardSize(content);
+    const width = size.width * contentScale;
+    const height = (size.height + (card.tags?.length ? 32 : 0)) * contentScale;
+    if (content === (card.content || '') && (card.sizeLocked
+      || (card.width === width && card.height === height))) return;
+    onTextEdit(card.id, { content,
+      ...(!card.sizeLocked ? { width,
+        height } : {}),
+    });
+  };
+
+  const clearTextSelection = (input: HTMLTextAreaElement) => {
+    const cursor = input.selectionEnd;
+    input.setSelectionRange(cursor, cursor);
+    window.getSelection()?.removeAllRanges();
+  };
 
   useEffect(() => {
-    setTextContent(card.content || '');
-  }, [card.content]);
+    if (!isSelected && textInputRef.current) {
+      if (document.activeElement === textInputRef.current) textInputRef.current.blur();
+      clearTextSelection(textInputRef.current);
+      setTextEditorEpoch((epoch) => epoch + 1);
+    }
+  }, [isSelected]);
 
   useEffect(() => {
     setTitleText(card.title || '');
@@ -38,30 +70,19 @@ export const CardBodyContent: React.FC<CardBodyContentProps> = ({
   }, [card.image]);
 
   useEffect(() => {
-    if (isEditingText && textareaRef.current) {
-      textareaRef.current.focus();
-      const len = textareaRef.current.value.length;
-      textareaRef.current.setSelectionRange(len, len);
+    if (isFeishu && card.image) {
+      onUpdate(card.id, { image: '', height: card.sizeLocked ? card.height : 90 });
     }
-  }, [isEditingText]);
+  }, [isFeishu, card.id, card.image, card.height, card.sizeLocked, onUpdate]);
 
   useEffect(() => {
     if (!isSelected) {
-      if (isEditingText) {
-        setIsEditingText(false);
-        if (textContent !== card.content) onUpdate(card.id, { content: textContent });
-      }
       if (isEditingTitle) {
         setIsEditingTitle(false);
         if (titleText !== card.title) onUpdate(card.id, { title: titleText });
       }
     }
-  }, [isSelected, isEditingText, isEditingTitle, textContent, titleText, card.content, card.title, card.id, onUpdate]);
-
-  const handleTextBlur = () => {
-    setIsEditingText(false);
-    if (textContent !== card.content) onUpdate(card.id, { content: textContent });
-  };
+  }, [isSelected, isEditingTitle, titleText, card.title, card.id, onUpdate]);
 
   const handleTitleBlur = () => {
     setIsEditingTitle(false);
@@ -108,7 +129,9 @@ export const CardBodyContent: React.FC<CardBodyContentProps> = ({
       }}
     >
       <div className="flex items-center gap-2">
-        {card.favicon ? (
+        {isFeishu ? (
+          <FeishuLogo />
+        ) : card.favicon ? (
           <img
             src={card.favicon}
             alt="icon"
@@ -218,7 +241,7 @@ export const CardBodyContent: React.FC<CardBodyContentProps> = ({
       );
 
     case 'web':
-      const showHeaderArea = (card.image && !imgLoadError) || card.isParsing;
+      const showHeaderArea = !isFeishu && ((card.image && !imgLoadError) || card.isParsing);
       return (
         <div className="w-full h-full flex flex-col overflow-hidden rounded-none bg-paper text-ink select-none">
           {showHeaderArea ? (
@@ -260,46 +283,32 @@ export const CardBodyContent: React.FC<CardBodyContentProps> = ({
             className={`flex-1 p-3.5 flex flex-col overflow-hidden bg-paper ${isSelected ? 'pointer-events-auto' : 'pointer-events-none select-none'}`}
             style={{ backgroundColor: card.color || undefined }}
           >
-            {isSelected && isEditingText ? (
-              <textarea
-                ref={textareaRef}
-                value={textContent}
-                onChange={(e) => setTextContent(e.target.value)}
-                onBlur={handleTextBlur}
-                className="w-full h-full bg-paper text-ink text-[15px] leading-[1.40] outline-none resize-none font-retina font-normal selection:bg-stone selection:text-ink"
-                style={{
-                  cursor: 'text',
-                  backgroundColor: card.color || undefined,
-                  color: card.textColor || undefined,
-                }}
-                onMouseDown={(e) => e.stopPropagation()}
-              />
-            ) : (
-              <div
-                onClick={(e) => {
-                  if (isSelected) {
-                    e.stopPropagation();
-                    setIsEditingText(true);
-                  }
-                }}
-                className={`w-full h-full text-ink text-[15px] leading-[1.40] whitespace-pre-wrap font-retina font-normal text-left ${
-                  isSelected ? 'overflow-y-auto cursor-text select-text' : 'overflow-hidden cursor-default'
-                }`}
-                style={{
-                  wordBreak: 'break-word',
-                  color: card.textColor || undefined,
-                }}
-              >
-                {textContent || (
-                  <span
-                    className="text-ink/40 italic select-none"
-                    style={{ color: card.textColor ? `${card.textColor}66` : undefined }}
-                  >
-                    {isSelected ? '点击输入文本...' : '空白便签'}
-                  </span>
-                )}
-              </div>
-            )}
+            <textarea
+              key={textEditorEpoch}
+              ref={textInputRef}
+              data-text-editor
+              value={card.content || ''}
+              readOnly={!isSelected}
+              tabIndex={isSelected ? 0 : -1}
+              placeholder="空白便签"
+              onFocus={onTextEditStart}
+              onChange={(event) => onTextEdit(card.id, { content: event.target.value })}
+              onBlur={(event) => {
+                clearTextSelection(event.target);
+                finishTextEdit(event.target.value);
+                // A blurred native textarea can keep painting its old selection.
+                setTextEditorEpoch((epoch) => epoch + 1);
+              }}
+              onMouseDown={(event) => { if (isSelected && !event.ctrlKey && !event.metaKey) event.stopPropagation(); }}
+              onDoubleClick={(event) => event.stopPropagation()}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') { event.stopPropagation(); textInputRef.current?.blur(); }
+              }}
+              className={`w-full h-full bg-transparent text-ink text-[15px] leading-[1.40] font-retina font-normal text-left resize-none border-0 outline-none p-0 m-0 placeholder:text-ink/40 placeholder:italic ${
+                isSelected ? 'overflow-auto select-text cursor-text' : 'overflow-hidden pointer-events-none select-none'
+              }`}
+              style={{ overflowWrap: 'anywhere', color: card.textColor || undefined }}
+            />
           </div>
           {card.tags && card.tags.length > 0 && (
             <div

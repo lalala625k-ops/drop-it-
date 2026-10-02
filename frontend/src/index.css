@@ -35,3 +35,7 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #1d1d1d;
 }
+
+textarea[data-text-editor]:not(:focus)::selection {
+  background: transparent;
+}

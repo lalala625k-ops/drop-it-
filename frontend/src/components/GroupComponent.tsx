@@ -10,7 +10,6 @@ interface GroupComponentProps {
   onSelect: (e: React.MouseEvent) => void;
   onRename: (id: string, newTitle: string) => void;
   onUngroup?: (id: string) => void;
-  onOpenMenu?: (x: number, y: number) => void;
 }
 
 export const GroupComponent: React.FC<GroupComponentProps> = ({
@@ -21,7 +20,6 @@ export const GroupComponent: React.FC<GroupComponentProps> = ({
   onSelect,
   onRename,
   onUngroup,
-  onOpenMenu,
 }) => {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [title, setTitle] = useState(group.title);
@@ -52,17 +50,17 @@ export const GroupComponent: React.FC<GroupComponentProps> = ({
   return (
     <div
       data-group-id={group.id}
-      title="直接拖动仅移动父物体，按住 Ctrl 拖动整体移动关联卡片，双击重命名"
+      title="拖动时整体移动关联卡片；Ctrl 拖动仅移动父物体；双击重命名"
       className={`group absolute top-0 left-0 select-none flex flex-col items-center justify-center rounded-full cursor-grab active:cursor-grabbing transition-colors duration-150 ${
         isDragOver
           ? 'bg-ink text-paper border-2 border-ink scale-110'
           : isSelected
-          ? 'bg-ink text-paper border-2 border-ink'
+          ? 'bg-paper text-ink border-[3px] border-ink'
           : 'bg-paper text-ink border border-ink hover:border-2'
       }`}
       style={{
-        backgroundColor: !isDragOver && !isSelected ? (group.color || undefined) : undefined,
-        color: !isDragOver && !isSelected && group.color ? groupColorText(group.color) : undefined,
+        backgroundColor: !isDragOver ? (group.color || undefined) : undefined,
+        color: !isDragOver && group.color ? groupColorText(group.color) : undefined,
         transform: `translate(${group.x}px, ${group.y}px)`,
         width: size,
         height: size,
@@ -81,7 +79,6 @@ export const GroupComponent: React.FC<GroupComponentProps> = ({
       onContextMenu={(e) => {
         e.preventDefault();
         e.stopPropagation();
-        onOpenMenu?.(e.clientX, e.clientY);
       }}
     >
       {/* Dissolve / Delete button on hover */}
@@ -101,16 +98,6 @@ export const GroupComponent: React.FC<GroupComponentProps> = ({
         </button>
       )}
 
-      {/* Child count badge (top-left pill) */}
-      {childCount > 0 && !isDragOver && (
-        <div
-          title={`${childCount} 个关联子卡片`}
-          className="absolute -top-1.5 -left-1.5 px-1.5 min-w-[16px] h-4 text-[9px] font-bold font-mono rounded-[10px] bg-ink text-paper border border-paper flex items-center justify-center z-20 pointer-events-none"
-        >
-          {childCount}
-        </div>
-      )}
-
       {/* Drop indicator arrow when dragging card over (pure minimalist circle otherwise) */}
       {isDragOver && (
         <div className="flex flex-col items-center justify-center pointer-events-none">
@@ -125,39 +112,39 @@ export const GroupComponent: React.FC<GroupComponentProps> = ({
         </div>
       )}
 
-      {/* Label and Title below the circle */}
-      <div className="absolute top-full mt-1.5 flex flex-col items-center z-20 pointer-events-auto">
-        {isEditingTitle ? (
-          <input
-            ref={inputRef}
-            type="text"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            onBlur={handleFinishRename}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleFinishRename();
-              if (e.key === 'Escape') {
-                setTitle(group.title);
-                setIsEditingTitle(false);
-              }
-            }}
-            className="w-24 px-2 py-0.5 text-[11px] font-bold uppercase tracking-[0.05em] text-center text-ink bg-paper border border-ink rounded-[10px] outline-none font-retina"
-            onClick={(e) => e.stopPropagation()}
-            onMouseDown={(e) => e.stopPropagation()}
-          />
-        ) : (
-          <div
-            title="双击重命名父物体"
-            className="px-2 py-0.5 text-[11px] font-bold uppercase tracking-[0.05em] text-ink bg-paper border border-ink rounded-[10px] whitespace-nowrap max-w-[120px] truncate select-none cursor-text hover:border-2 transition-all"
-            onDoubleClick={(e) => {
-              e.stopPropagation();
-              setIsEditingTitle(true);
-            }}
-          >
-            {group.title}
+      {!isDragOver && (
+        <div className="flex w-[90%] flex-col items-center justify-center gap-1 text-center pointer-events-none">
+          {isEditingTitle ? (
+            <input
+              ref={inputRef}
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              onBlur={handleFinishRename}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleFinishRename();
+                if (e.key === 'Escape') {
+                  setTitle(group.title);
+                  setIsEditingTitle(false);
+                }
+              }}
+              className="w-full px-1 py-0.5 text-[11px] font-bold text-center text-ink bg-paper border border-ink rounded-[10px] outline-none font-retina pointer-events-auto"
+              onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+            />
+          ) : (
+            <div
+              className="w-full overflow-hidden break-words text-[12px] leading-[1.2] font-bold font-retina"
+              style={{ display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2 }}
+            >
+              {group.title}
+            </div>
+          )}
+          <div title={`${childCount} 个关联子卡片`} className="text-[11px] leading-none font-bold font-mono opacity-70">
+            {childCount}
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -3,7 +3,7 @@ import { Card } from '../types';
 import { getAllTagsWithCounts } from '../utils/tagUtils';
 
 interface PieTagModalProps {
-  card: Card;
+  tags?: string[];
   allCards: Card[];
   position: { x: number; y: number };
   onToggleTag: (tag: string) => void;
@@ -12,7 +12,7 @@ interface PieTagModalProps {
 }
 
 export const PieTagModal: React.FC<PieTagModalProps> = ({
-  card,
+  tags,
   allCards,
   position,
   onToggleTag,
@@ -27,8 +27,8 @@ export const PieTagModal: React.FC<PieTagModalProps> = ({
   }, []);
 
   const currentTags = useMemo(() => {
-    return Array.isArray(card.tags) ? card.tags : [];
-  }, [card.tags]);
+    return Array.isArray(tags) ? tags : [];
+  }, [tags]);
 
   const allTagsWithCounts = useMemo(() => {
     return getAllTagsWithCounts(allCards);

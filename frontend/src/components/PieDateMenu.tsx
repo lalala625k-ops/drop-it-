@@ -1,20 +1,24 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Card } from '../types';
+import { Card, Group } from '../types';
 import { getNowFormatted } from '../utils/dateParser';
-import { getTopTags } from '../utils/tagUtils';
+import { groupGradientColor } from '../utils/groupColors';
+import { PieMenuSlot, pieGestureMoved, pieSectorAt, pieSlotPoint, placePieMenu, Point } from '../utils/pieMenuGeometry';
 import { PieDateInputModal } from './PieDateInputModal';
 import { PieTitleInputModal } from './PieTitleInputModal';
 import { PieTagModal } from './PieTagModal';
-import { GROUP_COLOR_FAMILIES, groupBaseColor, groupColorText, groupShadeColors } from '../utils/groupColors';
+import { GradientColorArc } from './GradientColorArc';
+import { MenuShortcutHint, useMenuShortcutHint } from './MenuShortcutHint';
+
+export type PieMenuTarget =
+  | { kind: 'card'; card: Card }
+  | { kind: 'bundle' | 'parent'; group: Group };
 
 export interface PieDateMenuProps {
-  card: Card;
+  target: PieMenuTarget;
   allCards: Card[];
-  groupKind?: 'bundle' | 'parent';
-  groupColor?: string;
-  onGroupColor?: (color: string) => void;
-  centerPosition: { x: number; y: number };
-  currentPointerPosition: { x: number; y: number };
+  parentId?: string | null;
+  centerPosition: Point;
+  currentPointerPosition: Point;
   isRightMouseDown: boolean;
   onConfirmDate: (dateStr: string | null) => void;
   onConfirmTitle: (title: string | null) => void;
@@ -22,232 +26,171 @@ export interface PieDateMenuProps {
   onReparseLink: () => void;
   onRecognizeImage: (mode: 'ocr' | 'link') => void;
   onUngroup: () => void;
+  onResetSize: () => void;
   onDetachFromBundle: () => void;
-  onDisconnectCardParent: () => void;
-  groupConnections?: { id: string; title: string }[];
-  onDisconnectGroupParent?: (parentId: string) => void;
+  onDisconnectParent: () => void;
+  onGroupColor: (color: string) => void;
   onClose: () => void;
 }
 
-type MenuMode = 'menu' | 'date-input' | 'title-input' | 'tag-search' | 'color-family' | 'color-shades';
-type ItemId = 'title' | 'date' | 'now' | 'tag_0' | 'tag_1' | 'tag_2' | 'tag_3' | 'tag_4'
-  | 'tag_other' | 'ocr' | 'link' | 'ungroup' | 'color';
-type PositionedItem = { id: ItemId; x: number; y: number };
-type Layout = { width: number; height: number; center: { x: number; y: number }; items: PositionedItem[] };
-const ITEM_SIZE = 72;
+type MenuMode = 'menu' | 'date-input' | 'title-input' | 'tag-search';
+type ItemId = 'title' | 'date' | 'now' | 'reset_size' | 'reparse' | 'ungroup'
+  | 'detach' | 'disconnect' | 'tag' | 'ocr' | 'link';
 
-const CARD_LAYOUT: Layout = {
-  width: 360, height: 360, center: { x: 180, y: 180 },
-  items: [
-    { id: 'tag_0', x: 131, y: 4 }, { id: 'tag_1', x: 44, y: 34 },
-    { id: 'tag_2', x: 5, y: 106 }, { id: 'tag_3', x: 5, y: 190 },
-    { id: 'tag_4', x: 44, y: 264 }, { id: 'tag_other', x: 131, y: 284 },
-    { id: 'title', x: 251, y: 33 }, { id: 'date', x: 283, y: 144 },
-    { id: 'now', x: 251, y: 254 },
-  ],
+const ITEM_SIZE = 72;
+const RADIUS = 180;
+const EXTENT = 228;
+const SLOT_ANGLES: Record<ItemId, number> = {
+  title: -60, date: -30, now: 0, reset_size: 30, reparse: 60,
+  ungroup: 90, detach: 120, disconnect: 150, tag: 180, ocr: 210, link: 240,
 };
-const IMAGE_LAYOUT: Layout = {
-  width: 260, height: 150, center: { x: 130, y: 75 },
-  items: [{ id: 'ocr', x: 8, y: 39 }, { id: 'link', x: 180, y: 39 }],
-};
-const BUNDLE_LAYOUT: Layout = {
-  width: 300, height: 300, center: { x: 150, y: 150 },
-  items: [
-    { id: 'title', x: 25, y: 15 }, { id: 'date', x: 3, y: 114 },
-    { id: 'now', x: 25, y: 213 }, { id: 'tag_other', x: 203, y: 15 },
-    { id: 'color', x: 203, y: 114 },
-    { id: 'ungroup', x: 203, y: 213 },
-  ],
-};
-const PARENT_LAYOUT: Layout = {
-  width: 260, height: 190, center: { x: 130, y: 95 },
-  items: [{ id: 'title', x: 8, y: 59 }, { id: 'color', x: 94, y: 0 }, { id: 'ungroup', x: 180, y: 59 }],
-};
-const COLOR_POSITIONS = [
-  { x: 114, y: 0 }, { x: 203, y: 42 }, { x: 203, y: 172 },
-  { x: 114, y: 228 }, { x: 25, y: 172 }, { x: 25, y: 42 },
-];
-const COLOR_LAYOUT: Layout = { width: 300, height: 300, center: { x: 150, y: 150 }, items: [] };
+
+function menuSlots(target: PieMenuTarget, parentId?: string | null): PieMenuSlot<ItemId>[] {
+  const ids: ItemId[] = ['title'];
+  if (target.kind !== 'parent') {
+    ids.push('date', 'now', 'reset_size', 'tag');
+    if (target.kind === 'bundle') {
+      ids.push('ungroup');
+      if (parentId) ids.push('disconnect');
+    } else if (target.kind === 'card') {
+      if (target.card.type === 'web' && target.card.url) ids.push('reparse');
+      if (target.card.type === 'image') ids.push('ocr', 'link');
+      if (target.card.bundleId) ids.push('detach');
+      if (target.card.groupId) ids.push('disconnect');
+    }
+  } else ids.push('ungroup');
+  return ids.map((id) => ({ id, angle: SLOT_ANGLES[id],
+    disabled: target.kind === 'card' && !!target.card.isParsing
+      && (id === 'reparse' || id === 'ocr' || id === 'link') }));
+}
+
+function parentColorAt(pointer: Point, center: Point, scale: number): string | null {
+  const x = (pointer.x - center.x) / scale;
+  const y = (pointer.y - center.y) / scale;
+  const radius = Math.hypot(x, y);
+  if (x > 0 || radius < 88 || radius > 138) return null;
+  const angle = Math.atan2(y, x);
+  const leftAngle = angle > 0 ? angle - Math.PI * 2 : angle;
+  const progress = (-Math.PI / 2 - leftAngle) / Math.PI;
+  if (progress < 0 || progress > 1) return null;
+  const index = Math.min(63, Math.floor(progress * 64));
+  return groupGradientColor((index + 0.5) / 64);
+}
 
 export const PieDateMenu: React.FC<PieDateMenuProps> = ({
-  card, allCards, groupKind, groupColor, onGroupColor, centerPosition, currentPointerPosition, isRightMouseDown,
+  target, allCards, parentId, centerPosition, currentPointerPosition, isRightMouseDown,
   onConfirmDate, onConfirmTitle, onToggleTag, onReparseLink, onRecognizeImage,
-  onUngroup, onDetachFromBundle, onDisconnectCardParent,
-  groupConnections, onDisconnectGroupParent, onClose,
+  onUngroup, onResetSize, onDetachFromBundle, onDisconnectParent, onGroupColor, onClose,
 }) => {
   const [mode, setMode] = useState<MenuMode>('menu');
-  const [shadeHue, setShadeHue] = useState(0);
-  const gestureTargetRef = useRef<ItemId | null>(null);
-  const wasDraggingRef = useRef(false);
-  const topTags = useMemo(() => getTopTags(allCards, 5), [allCards]);
-  const cardTags = Array.isArray(card.tags) ? card.tags : [];
-  const layout = mode === 'color-family' || mode === 'color-shades' ? COLOR_LAYOUT
-    : groupKind === 'bundle' ? BUNDLE_LAYOUT : groupKind === 'parent' ? PARENT_LAYOUT
-    : card.type === 'image' ? IMAGE_LAYOUT : CARD_LAYOUT;
-  const dx = currentPointerPosition.x - centerPosition.x;
-  const dy = currentPointerPosition.y - centerPosition.y;
-  const isDragging = isRightMouseDown && Math.hypot(dx, dy) > 18;
-  const activeItem = useMemo(() => {
-    if (!isDragging) return null;
-    const distance = Math.hypot(dx, dy);
-    let nearest: ItemId | null = null;
-    let bestScore = -Infinity;
-    for (const item of layout.items) {
-      const itemDx = item.x + ITEM_SIZE / 2 - layout.center.x;
-      const itemDy = item.y + ITEM_SIZE / 2 - layout.center.y;
-      const score = (dx * itemDx + dy * itemDy) / (distance * Math.hypot(itemDx, itemDy));
-      if (score > bestScore) { bestScore = score; nearest = item.id; }
-    }
-    return nearest;
-  }, [isDragging, dx, dy, layout]);
-  if (isDragging) {
-    wasDraggingRef.current = true;
-    gestureTargetRef.current = activeItem;
-  }
+  const { hint, showHint, hideHint } = useMenuShortcutHint();
+  const rightHeldRef = useRef(isRightMouseDown);
+  const { center, scale } = placePieMenu(centerPosition, EXTENT);
+  const slots = useMemo(() => menuSlots(target, parentId), [target, parentId]);
+  const card = target.kind === 'card' ? target.card : undefined;
+  const reminder = target.kind === 'card' ? target.card.reminder : target.group.reminder;
+  const tags = target.kind === 'card' ? target.card.tags : target.group.tags;
+  const isDragging = isRightMouseDown && pieGestureMoved(centerPosition, currentPointerPosition);
+  const overColor = target.kind === 'parent'
+    && !!parentColorAt(currentPointerPosition, center, scale);
+  const activeItem = isDragging && !overColor
+    ? pieSectorAt(currentPointerPosition, center, scale, RADIUS, slots) : null;
 
   const chooseItem = (id: ItemId) => {
+    if (slots.find((slot) => slot.id === id)?.disabled) return;
     if (id === 'title') setMode('title-input');
     else if (id === 'date') setMode('date-input');
     else if (id === 'now') onConfirmDate(getNowFormatted().formattedText);
-    else if (id === 'tag_other') setMode('tag-search');
-    else if (id === 'color') setMode('color-family');
-    else if (id === 'ocr' || id === 'link') {
-      if (!card.isParsing) onRecognizeImage(id);
-    }
+    else if (id === 'tag') setMode('tag-search');
+    else if (id === 'reset_size') onResetSize();
+    else if (id === 'reparse') onReparseLink();
+    else if (id === 'ocr' || id === 'link') onRecognizeImage(id);
     else if (id === 'ungroup') onUngroup();
-    else {
-      const tag = topTags[Number(id.slice(4))];
-      if (tag) onToggleTag(tag);
-    }
+    else if (id === 'detach') onDetachFromBundle();
+    else if (id === 'disconnect') onDisconnectParent();
   };
+
   useEffect(() => {
-    if (!isRightMouseDown && wasDraggingRef.current && mode === 'menu') {
-      wasDraggingRef.current = false;
-      const target = gestureTargetRef.current;
-      gestureTargetRef.current = null;
-      if (target) chooseItem(target);
+    if (isRightMouseDown || !rightHeldRef.current) return;
+    rightHeldRef.current = false;
+    if (!pieGestureMoved(centerPosition, currentPointerPosition)) return;
+    if (target.kind === 'parent') {
+      const color = parentColorAt(currentPointerPosition, center, scale);
+      if (color) { onGroupColor(color); return; }
     }
-  }, [isRightMouseDown, mode]);
+    const item = pieSectorAt(currentPointerPosition, center, scale, RADIUS, slots);
+    if (item) chooseItem(item);
+    else onClose();
+  }, [isRightMouseDown, currentPointerPosition, mode]);
+
   useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
+    const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') { event.preventDefault(); onClose(); }
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
   }, [onClose]);
 
-  const hasExtras = !groupKind && (card.type === 'web' && !!card.url || !!card.bundleId || !!card.groupId);
-  const bottomExtra = 12 + (hasExtras ? 82 : 0) + (groupConnections?.length ? 146 : 0);
-  const scale = Math.min(1, (window.innerWidth - 24) / layout.width,
-    (window.innerHeight - 24) / (layout.height + bottomExtra));
-  const halfWidth = layout.width * scale / 2;
-  const halfHeight = layout.height * scale / 2;
-  const clampedX = Math.max(halfWidth + 12, Math.min(window.innerWidth - halfWidth - 12, centerPosition.x));
-  const clampedY = Math.max(halfHeight + 12,
-    Math.min(window.innerHeight - halfHeight - bottomExtra * scale - 12, centerPosition.y));
+  const label = (id: ItemId) => ({
+    title: '标题', date: '时间', now: 'NOW', reset_size: '复位',
+    reparse: '解析', ungroup: '解组', detach: '解组', disconnect: '断线',
+    tag: '标签', ocr: '识字', link: '溯源',
+  })[id];
+  const description = (id: ItemId) => ({
+    title: target.kind === 'card' ? '设置悬浮标题'
+      : target.kind === 'bundle' ? '设置 Group 标题' : '重命名父物体',
+    date: '设置或清除时间', now: '标记当前时间', reset_size: '恢复默认大小',
+    reparse: '重新解析链接', ungroup: target.kind === 'parent' ? '解散父物体并保留关联对象' : '解散 Group 并保留成员',
+    detach: '从当前 Group 中移出卡片', disconnect: '断开上级连线',
+    tag: '搜索和管理标签', ocr: '识别图片文字', link: '识别图片原链接',
+  })[id];
 
-  const itemLabel = (id: ItemId) => {
-    if (id.startsWith('tag_') && id !== 'tag_other') return topTags[Number(id.slice(4))];
-    return ({ title: '设置标题', date: '输入时间', now: 'NOW', tag_other: '其他标签', color: '颜色',
-      ocr: 'OCR 识别', link: '识别原链接', ungroup: groupKind === 'parent' ? '解散父物体' : '解散 Group' } as Record<string, string>)[id];
-  };
-
-  return (
-    <div className="fixed inset-0 z-[10002] pointer-events-auto select-none"
-      onContextMenu={(event) => event.preventDefault()}
-      onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      {mode === 'menu' || mode === 'color-family' || mode === 'color-shades' ? (
-        <div className="absolute pointer-events-auto"
-          style={{ left: clampedX, top: clampedY, width: layout.width,
-            transform: `translate(-50%, -50%) scale(${scale})` }}
-          onMouseDown={(event) => event.stopPropagation()}>
-          <div className="relative" style={{ width: layout.width, height: layout.height }}>
-            {mode === 'menu' ? layout.items.map(({ id, x, y }) => {
-              const isTagged = id.startsWith('tag_') && id !== 'tag_other' && cardTags.includes(itemLabel(id));
-              const isActive = activeItem === id;
-              return (
-                <button key={id} type="button" onClick={() => chooseItem(id)}
-                  disabled={card.isParsing && (id === 'ocr' || id === 'link')}
-                  title={itemLabel(id)}
-                  style={{ left: x, top: y }}
-                  className={`absolute flex h-[72px] w-[72px] items-center justify-center rounded-full border-2 px-1.5 text-center transition-colors duration-100 disabled:opacity-50 ${
-                    isActive ? 'border-ink bg-paper text-ink' : 'border-ink bg-ink text-paper hover:bg-paper hover:text-ink'
-                  }`}>
-                  <span className="max-h-[2.4em] max-w-[58px] overflow-hidden break-all text-[11px] font-bold leading-[1.2] tracking-[0.02em]">
-                    {isTagged ? '✓ ' : id.startsWith('tag_') && id !== 'tag_other' ? '# ' : ''}{itemLabel(id)}
-                  </span>
-                </button>
-              );
-            }) : COLOR_POSITIONS.map(({ x, y }, index) => {
-              const family = GROUP_COLOR_FAMILIES[index];
-              const color = mode === 'color-family' ? groupBaseColor(family.hue) : groupShadeColors(shadeHue)[index];
-              return <button key={`${mode}-${index}`} type="button"
-                title={mode === 'color-family' ? `${family.name}色；右键细选` : `${GROUP_COLOR_FAMILIES.find((item) => item.hue === shadeHue)?.name || ''}色变体 ${index + 1}`}
-                aria-label={mode === 'color-family' ? `${family.name}色，右键查看更多` : `颜色变体 ${index + 1}`}
-                onClick={() => onGroupColor?.(color)}
-                onContextMenu={(event) => { event.preventDefault(); event.stopPropagation();
-                  if (mode === 'color-family') { setShadeHue(family.hue); setMode('color-shades'); } }}
-                style={{ left: x, top: y, backgroundColor: color, color: groupColorText(color) }}
-                className={`absolute flex h-[72px] w-[72px] items-center justify-center rounded-full border-2 text-[11px] font-bold text-white ${
-                  groupColor === color ? 'border-[4px] border-ink' : 'border-paper hover:border-ink'
-                }`}>
-                {mode === 'color-family' ? family.name : ''}
-              </button>;
-            })}
-            <div className="absolute flex h-[32px] w-[32px] items-center justify-center rounded-full border-2 border-ink bg-ink text-paper"
-              style={{ left: layout.center.x - 16, top: layout.center.y - 16 }}>
-              {mode !== 'menu' ? (
-                <button type="button" onClick={() => setMode(mode === 'color-shades' ? 'color-family' : 'menu')}
-                  title="返回" className="h-full w-full rounded-full text-[13px] font-bold">‹</button>
-              ) : card.reminder && !isDragging && groupKind !== 'parent' && card.type !== 'image' ? (
-                <button type="button" onClick={() => onConfirmDate(null)} title="清除已标记的日期"
-                  className="h-full w-full rounded-full text-[9px] font-bold text-paper hover:bg-paper hover:text-ink">清除</button>
-              ) : <span className="h-1.5 w-1.5 rounded-full bg-paper" />}
-            </div>
-          </div>
-          {mode === 'menu' && hasExtras && (
-            <div className="mx-auto mt-2 flex w-fit max-w-full flex-wrap justify-center gap-2">
-              {card.type === 'web' && card.url && (
-                <button type="button" onClick={onReparseLink} disabled={card.isParsing}
-                  className="h-[72px] w-[72px] rounded-full border-2 border-ink bg-ink px-1.5 text-center text-[10px] font-bold leading-tight text-paper hover:bg-paper hover:text-ink disabled:opacity-50">
-                  {card.isParsing ? '解析中' : '重新解析链接'}
-                </button>
-              )}
-              {card.bundleId && <button type="button" onClick={onDetachFromBundle}
-                className="h-[72px] w-[72px] rounded-full border-2 border-ink bg-ink px-1.5 text-center text-[10px] font-bold leading-tight text-paper hover:bg-paper hover:text-ink">脱离 Group</button>}
-              {card.groupId && <button type="button" onClick={onDisconnectCardParent}
-                className="h-[72px] w-[72px] rounded-full border-2 border-ink bg-ink px-1.5 text-center text-[10px] font-bold leading-tight text-paper hover:bg-paper hover:text-ink">断开连线</button>}
-            </div>
-          )}
-          {mode === 'menu' && groupConnections && groupConnections.length > 0 && (
-            <div className="mx-auto mt-2 flex max-h-32 w-[300px] flex-wrap justify-center gap-2 overflow-y-auto p-1">
-              {groupConnections.map((parent) => (
-                <button key={parent.id} type="button"
-                  title={`断开与「${parent.title || '父物体'}」的连接`}
-                  className="h-[72px] w-[72px] rounded-full border-2 border-ink bg-ink px-1 text-center text-[10px] font-bold leading-tight text-paper hover:bg-paper hover:text-ink"
-                  onClick={() => onDisconnectGroupParent?.(parent.id)}>
-                  <span className="mx-auto block max-h-[2.5em] max-w-[60px] overflow-hidden break-all">
-                    断开 {parent.title || '父物体'}
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
+  return <div className="fixed inset-0 z-[10002] pointer-events-auto select-none"
+    onContextMenu={(event) => event.preventDefault()}
+    onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    {mode === 'menu' ? <>
+      <div className="absolute pointer-events-auto"
+        style={{ left: center.x, top: center.y, width: EXTENT * 2, height: EXTENT * 2,
+          transform: `translate(-50%, -50%) scale(${scale})` }}
+        onMouseDown={(event) => event.stopPropagation()}>
+        {target.kind === 'parent' && <GradientColorArc width={EXTENT * 2} height={EXTENT * 2}
+          center={{ x: EXTENT, y: EXTENT }} onSelect={onGroupColor} />}
+        {slots.map(({ id, angle, disabled }) => {
+          const point = pieSlotPoint({ x: EXTENT, y: EXTENT }, RADIUS, angle);
+          return <button key={id} type="button" data-pie-item={id} disabled={disabled}
+            aria-label={description(id)} title={description(id)} onClick={() => chooseItem(id)}
+            style={{ left: point.x - ITEM_SIZE / 2, top: point.y - ITEM_SIZE / 2 }}
+            onMouseEnter={(event) => showHint(event.currentTarget,
+              id === 'reset_size' ? 'Ctrl+O（选中后）' : id === 'ungroup' ? 'Ctrl+Shift+G（选中后）' : null)}
+            onMouseLeave={hideHint}
+            className={`absolute flex h-[72px] w-[72px] items-center justify-center rounded-full border-2 px-1.5 text-center transition-colors duration-100 disabled:opacity-40 ${activeItem === id
+              ? 'border-ink bg-paper text-ink' : 'border-ink bg-ink text-paper hover:bg-paper hover:text-ink'}`}>
+            <span className="max-h-[2.4em] max-w-[58px] overflow-hidden break-all text-[11px] font-bold leading-[1.2] tracking-[0.02em]">
+              {label(id)}
+            </span>
+          </button>;
+        })}
+        <div className="absolute flex h-8 w-8 items-center justify-center rounded-full border-2 border-ink bg-ink"
+          style={{ left: EXTENT - 16, top: EXTENT - 16 }} aria-hidden="true">
+          <span className="h-1.5 w-1.5 rounded-full bg-paper" />
         </div>
-      ) : mode === 'date-input' ? (
-        <PieDateInputModal card={card} position={{ x: clampedX, y: clampedY }}
-          onConfirm={onConfirmDate} onClearDate={() => onConfirmDate(null)}
-          onBackToPie={() => setMode('menu')} onClose={onClose} />
-      ) : mode === 'title-input' ? (
-        <PieTitleInputModal
-          initialTitle={card.headerTitle || (card.type === 'text' ? card.title || '' : '')}
-          originalTitle={card.title || undefined} cardType={card.type}
-          position={{ x: clampedX, y: clampedY }} onConfirm={onConfirmTitle}
-          onBackToPie={() => setMode('menu')} onClose={onClose} />
-      ) : (
-        <PieTagModal card={card} allCards={allCards} position={{ x: clampedX, y: clampedY }}
-          onToggleTag={onToggleTag} onBackToPie={() => setMode('menu')} onClose={onClose} />
-      )}
-    </div>
-  );
+      </div>
+      <MenuShortcutHint hint={hint} />
+    </> : mode === 'date-input' ? (
+      <PieDateInputModal reminder={reminder} position={center}
+        onConfirm={onConfirmDate} onClearDate={() => onConfirmDate(null)}
+        onBackToPie={() => setMode('menu')} onClose={onClose} />
+    ) : mode === 'title-input' ? (
+      <PieTitleInputModal
+        initialTitle={target.kind === 'card'
+          ? target.card.headerTitle || (target.card.type === 'text' ? target.card.title || '' : '')
+          : target.group.title}
+        originalTitle={card?.title} cardType={card?.type} subject={target.kind}
+        position={center} onConfirm={onConfirmTitle}
+        onBackToPie={() => setMode('menu')} onClose={onClose} />
+    ) : (
+      <PieTagModal tags={tags} allCards={allCards} position={center}
+        onToggleTag={onToggleTag} onBackToPie={() => setMode('menu')} onClose={onClose} />
+    )}
+  </div>;
 };

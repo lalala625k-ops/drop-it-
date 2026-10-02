@@ -7,6 +7,7 @@ interface UseShortcutsProps {
   onGroup: () => void;
   onBundle: () => void;
   onUngroup: () => void;
+  onResetSize: () => void;
   onAutoPack: () => void;
   onAlign: (direction: 'top' | 'bottom' | 'left' | 'right') => void;
   onExportBackup: () => void;
@@ -25,6 +26,7 @@ export function useShortcuts({
   onGroup,
   onBundle,
   onUngroup,
+  onResetSize,
   onAutoPack,
   onAlign,
   onExportBackup,
@@ -56,6 +58,14 @@ export function useShortcuts({
         }
       }
 
+      if (isInputFocused) return;
+
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key === 'o' || e.key === 'O')) {
+        e.preventDefault();
+        onResetSize();
+        return;
+      }
+
       // PRD 1.3: Ctrl + N (New blank text card)
       if (e.ctrlKey && (e.key === 'n' || e.key === 'N')) {
         e.preventDefault();
@@ -72,7 +82,7 @@ export function useShortcuts({
         }
       }
 
-      // Ctrl + C (Copy selected cards)
+      // Ctrl + C (Copy selected canvas objects and their relationships)
       if (e.ctrlKey && !e.shiftKey && (e.key === 'c' || e.key === 'C')) {
         if (!isInputFocused && onCopy) {
           e.preventDefault();
@@ -177,7 +187,7 @@ export function useShortcuts({
       window.removeEventListener('blur', handleWindowBlur);
       window.removeEventListener('paste', onPaste);
     };
-  }, [onNewCard, onDelete, onUndo, onGroup, onBundle, onUngroup, onAutoPack, onAlign, onExportBackup, onPaste, onCopy, onDuplicate, onSearch, onMinimapOpen, onMinimapClose]);
+  }, [onNewCard, onDelete, onUndo, onGroup, onBundle, onUngroup, onResetSize, onAutoPack, onAlign, onExportBackup, onPaste, onCopy, onDuplicate, onSearch, onMinimapOpen, onMinimapClose]);
 
   return { isShiftPressedRef, isSpacePressedRef, isAltPressedRef };
 }

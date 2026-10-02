@@ -4,6 +4,7 @@ import { CardComponent } from './components/CardComponent';
 import { GroupComponent } from './components/GroupComponent';
 import { BundleGroupComponent } from './components/BundleGroupComponent';
 import { ParentLinkLines } from './components/ParentLinkLines';
+import { ClipboardPastePreview } from './components/ClipboardPastePreview';
 import { SelectionBox } from './components/SelectionBox';
 import { SnapGuides } from './components/SnapGuides';
 import { CanvasCommandMenu, CanvasCommand } from './components/CanvasCommandMenu';
@@ -41,7 +42,7 @@ export default function App() {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [pressedObject, setPressedObject] = useState<string | null>(null);
   const [canvasMenuPosition, setCanvasMenuPosition] = useState<{ x: number; y: number } | null>(null);
-  const rightPointerDownRef = useRef<{ x: number; y: number } | null>(null);
+  const suppressPasteClickRef = useRef(false);
 
   useEffect(() => {
     const release = () => setPressedObject(null);
@@ -129,10 +130,14 @@ export default function App() {
     cardsRef,
     groupsRef,
     selectedCardIdsRef,
+    selectedGroupIdsRef,
     setSelectedCardIds,
+    setSelectedGroupIds,
     setCards,
+    setGroups,
     maxZIndexRef,
     mouseWorldRef,
+    mouseScreenRef,
     pushHistory,
     showToast,
   });
@@ -163,7 +168,9 @@ export default function App() {
     if (!groupsRef.current.some((group) => group.id === parentId && group.kind !== 'bundle')) return;
     pushHistory(cardsRef.current, groupsRef.current);
     const nextCards = cardsRef.current.map((card) => card.groupId === parentId ? { ...card, groupId: null } : card);
-    const nextGroups = groupsRef.current.filter((group) => group.id !== parentId);
+    const nextGroups = groupsRef.current.filter((group) => group.id !== parentId)
+      .map((group) => group.parentIds?.includes(parentId)
+        ? { ...group, parentIds: group.parentIds.filter((id) => id !== parentId) } : group);
     actions.commitState(nextCards, nextGroups);
     setSelectedGroupIds((previous) => {
       const next = new Set(previous);
@@ -175,25 +182,51 @@ export default function App() {
 
   useCanvasInit({ setCards, setGroups, setViewport, maxZIndexRef });
 
+  const parentHighlights = useMemo(() => {
+    const cardIds = new Set<string>();
+    const bundleIds = new Set<string>();
+    for (const id of [...selectedGroupIds, ...selectedCardIds]) {
+      const linked = getParentLinkage(cards, id, displayGroups);
+      linked.cardIds.forEach((id) => cardIds.add(id));
+      linked.bundleIds.forEach((id) => bundleIds.add(id));
+    }
+    return { cardIds, bundleIds };
+  }, [cards, displayGroups, selectedCardIds, selectedGroupIds]);
+
   const { visibleCards, visibleGroups, visibleCardIdSet } = useVirtualViewport({
     viewport,
     cards: canvasCards,
     groups: displayGroups,
     selectedCardIds,
     selectedGroupIds,
+    highlightedCardIds: parentHighlights.cardIds,
+    highlightedGroupIds: parentHighlights.bundleIds,
     bufferPx: 300,
   });
+  const bundleContentScales = useMemo(() => new Map(groups
+    .filter((group) => group.kind === 'bundle')
+    .map((group) => [group.id, (group.outlinePadding ?? 18) / 18])), [groups]);
 
   // Paste & Shortcuts
-  const { handlePaste } = useClipboardPaste({
+  const { handlePaste, handleDroppedData } = useClipboardPaste({
     createCardAtCursor: actions.createCardAtCursor,
     updateCard: actions.handleCardUpdate,
-    pasteCopiedCards: clipboard.handlePasteCopiedCards,
-    getCopiedCards: () => clipboard.copiedCardsRef.current,
+    stageCopiedObjects: clipboard.stagePaste,
+    getCopiedObjects: () => clipboard.copiedObjectsRef.current,
     getWorldPosition: () => mouseWorldRef.current,
     getCardById: (id) => cardsRef.current.find((card) => card.id === id),
     showToast,
   });
+
+  const resetObjectSize = useCallback((id: string) => {
+    const group = groupsRef.current.find((item) => item.id === id && item.kind === 'bundle');
+    if (group) { bundles.resetBundleSize(group.id); return; }
+    const card = cardsRef.current.find((item) => item.id === id);
+    if (!card) return;
+    if (card.bundleId && groupsRef.current.some((item) => item.id === card.bundleId && item.kind === 'bundle')) {
+      bundles.resetBundleSize(card.bundleId);
+    } else actions.handleResetCardSize(card.id);
+  }, [actions.handleResetCardSize, bundles.resetBundleSize, cardsRef, groupsRef]);
 
   const { isShiftPressedRef, isSpacePressedRef, isAltPressedRef } = useShortcuts({
     onNewCard: () => actions.createCardAtCursor({ type: 'text', content: '', width: 260, height: 180 }),
@@ -202,6 +235,12 @@ export default function App() {
     onGroup: actions.handleGroup,
     onBundle: bundles.createBundle,
     onUngroup: actions.handleUngroup,
+    onResetSize: () => {
+      const id = [...selectedGroupIdsRef.current].find((groupId) =>
+        groupsRef.current.some((group) => group.id === groupId && group.kind === 'bundle'))
+        || [...selectedCardIdsRef.current][0];
+      if (id) resetObjectSize(id);
+    },
     onAutoPack: actions.handleAutoPack,
     onAlign: actions.handleAlign,
     onExportBackup: () => { exportBackup(cardsRef.current, groupsRef.current); showToast('已导出备份'); },
@@ -212,6 +251,30 @@ export default function App() {
     onMinimapOpen: minimap.handleMinimapOpen,
     onMinimapClose: minimap.handleMinimapClose,
   });
+
+  useEffect(() => {
+    if (!clipboard.hasPendingPaste) return;
+    let frame: number | null = null;
+    let nextPosition = clipboard.pasteScreenPosition;
+    const move = (event: MouseEvent) => {
+      nextPosition = { x: event.clientX, y: event.clientY };
+      if (frame !== null) return;
+      frame = window.requestAnimationFrame(() => {
+        clipboard.setPasteScreenPosition(nextPosition);
+        frame = null;
+      });
+    };
+    const cancel = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') { event.preventDefault(); clipboard.cancelPendingPaste(); }
+    };
+    window.addEventListener('mousemove', move, { passive: true });
+    window.addEventListener('keydown', cancel);
+    return () => {
+      if (frame !== null) window.cancelAnimationFrame(frame);
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('keydown', cancel);
+    };
+  }, [clipboard.hasPendingPaste, clipboard.setPasteScreenPosition, clipboard.cancelPendingPaste]);
 
   const canvasInteractions = useCanvasInteractions({
     viewportRef,
@@ -251,6 +314,7 @@ export default function App() {
     pushHistory,
     showToast,
     onOpenPieMenu: pieMenu.openPieMenu,
+    onOpenGroupPieMenu: pieMenu.openGroupPieMenu,
     onUpdatePieMenuPointer: pieMenu.updatePieMenuPointer,
     onReleasePieMenuMouseDown: pieMenu.releasePieMenuMouseDown,
   });
@@ -265,6 +329,7 @@ export default function App() {
     pushHistory,
     createCardAtCursor: actions.createCardAtCursor,
     handleCardUpdate: actions.handleCardUpdate,
+    handleDroppedData,
     showToast,
   });
 
@@ -283,8 +348,9 @@ export default function App() {
       case 'group': bundles.createBundle(); break;
       case 'search': setIsSearchOpen(true); break;
       case 'copy': clipboard.handleCopy(); break;
-      case 'paste': clipboard.handlePasteCopiedCards(clipboard.copiedCardsRef.current); break;
+      case 'paste': clipboard.stagePaste(clipboard.copiedObjectsRef.current); break;
       case 'fit': handleCanvasDoubleClick(canvasCards, fitGroups); break;
+      case 'uniform-width': actions.handleUniformCardWidth(); break;
     }
   }, [actions, bundles, canvasCards, canvasMenuPosition, clipboard, fitGroups, handleCanvasDoubleClick,
     mouseScreenRef, mouseWorldRef, viewportRef]);
@@ -298,14 +364,43 @@ export default function App() {
       }`}
       onWheel={handleWheel}
       onWheelCapture={(e) => {
+        if ((e.target as HTMLElement).closest('textarea, input, [contenteditable="true"]')) {
+          e.stopPropagation();
+          return;
+        }
         if ((e.target as HTMLElement).closest('[data-card-id], [data-group-id], [data-bundle-id]')) {
           e.stopPropagation();
           handleWheel(e);
         }
       }}
       onMouseDownCapture={(e) => {
-        if (e.button === 2) rightPointerDownRef.current = { x: e.clientX, y: e.clientY };
+        if (clipboard.hasPendingPaste && e.button === 0 &&
+          (e.target === e.currentTarget || (e.target as HTMLElement).closest('[data-canvas-surface]'))) {
+          e.preventDefault();
+          e.stopPropagation();
+          suppressPasteClickRef.current = true;
+          const target = { x: (e.clientX - viewportRef.current.x) / viewportRef.current.zoom,
+            y: (e.clientY - viewportRef.current.y) / viewportRef.current.zoom };
+          mouseWorldRef.current = target;
+          clipboard.commitPendingPaste(target);
+          return;
+        }
         const object = (e.target as HTMLElement).closest('[data-card-id], [data-group-id], [data-bundle-id]');
+        const editable = (e.target as HTMLElement).closest('textarea, input, [contenteditable="true"]');
+        if (editable && !(e.button === 2 && object?.hasAttribute('data-card-id'))) return;
+        if (e.button === 2) {
+          if (!(e.target as HTMLElement).closest('[data-canvas-surface]')) return;
+          e.preventDefault();
+          e.stopPropagation();
+          if (object) canvasInteractions.handleMouseDown(e);
+          else {
+            mouseScreenRef.current = { x: e.clientX, y: e.clientY };
+            mouseWorldRef.current = { x: (e.clientX - viewportRef.current.x) / viewportRef.current.zoom,
+              y: (e.clientY - viewportRef.current.y) / viewportRef.current.zoom };
+            setCanvasMenuPosition({ x: e.clientX, y: e.clientY });
+          }
+          return;
+        }
         if (!object) return;
         if (e.button === 1 || (e.button === 0 && (isSpacePressedRef.current || (e.altKey && !e.ctrlKey)))) {
           e.stopPropagation();
@@ -318,6 +413,12 @@ export default function App() {
           setPressedObject(object.getAttribute('data-card-id') || object.getAttribute('data-group-id') || object.getAttribute('data-bundle-id'));
         }
       }}
+      onClickCapture={(e) => {
+        if (!suppressPasteClickRef.current) return;
+        suppressPasteClickRef.current = false;
+        e.preventDefault();
+        e.stopPropagation();
+      }}
       onMouseDown={canvasInteractions.handleMouseDown}
       onDoubleClick={(e) => {
         const target = e.target as HTMLElement;
@@ -325,20 +426,10 @@ export default function App() {
           setIsSearchOpen(true);
         }
       }}
-      onDragOver={(e) => e.preventDefault()}
+      onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }}
       onDrop={handleDrop}
       onContextMenu={(e) => {
         e.preventDefault();
-        const target = e.target as HTMLElement;
-        if (target !== e.currentTarget && !target.closest('[data-canvas-surface]')) return;
-        const start = rightPointerDownRef.current;
-        rightPointerDownRef.current = null;
-        if (target.closest('[data-card-id], [data-group-id], [data-bundle-id]')) return;
-        if (start && Math.hypot(e.clientX - start.x, e.clientY - start.y) > 5) return;
-        mouseScreenRef.current = { x: e.clientX, y: e.clientY };
-        mouseWorldRef.current = { x: (e.clientX - viewportRef.current.x) / viewportRef.current.zoom,
-          y: (e.clientY - viewportRef.current.y) / viewportRef.current.zoom };
-        setCanvasMenuPosition({ x: e.clientX, y: e.clientY });
       }}
     >
       <div
@@ -365,6 +456,7 @@ export default function App() {
             group={group}
             members={cards.filter((card) => card.bundleId === group.id)}
             selected={selectedGroupIds.has(group.id) && pressedObject !== group.id}
+            parentHighlighted={parentHighlights.bundleIds.has(group.id)}
             onDrag={(event) => canvasInteractions.handleStartGroupDrag(group, event)}
             onResize={(corner, event) => bundles.startBundleResize(group.id, corner, event)}
             onToggle={() => bundles.toggleBundle(group.id)}
@@ -377,12 +469,11 @@ export default function App() {
             key={group.id}
             group={group}
             isSelected={selectedGroupIds.has(group.id) && pressedObject !== group.id}
-            childCount={getParentLinkage(cards, group.id).cardIds.size}
+            childCount={getParentLinkage(cards, group.id, displayGroups).cardIds.size}
             isDragOver={dragOverGroupId === group.id}
             onSelect={(e) => canvasInteractions.handleStartGroupDrag(group, e)}
             onRename={renameGroup}
             onUngroup={dissolveParent}
-            onOpenMenu={(x, y) => pieMenu.openGroupPieMenu(group, x, y)}
           />
         ))}
 
@@ -390,10 +481,14 @@ export default function App() {
           <CardComponent
             key={card.id}
             card={card}
+            contentScale={card.bundleId ? bundleContentScales.get(card.bundleId) ?? 1 : 1}
             isSelected={selectedCardIds.has(card.id)}
             showSelectionControls={selectedCardIds.has(card.id) && pressedObject !== card.id}
+            parentHighlighted={parentHighlights.cardIds.has(card.id)}
             onSelect={(e) => canvasInteractions.handleStartCardDrag(card, e)}
             onUpdate={actions.handleCardUpdate}
+            onTextEdit={actions.handleCardTextEdit}
+            onTextEditStart={() => pushHistory(cardsRef.current, groupsRef.current)}
             onDoubleClick={handleCardDoubleClick}
             onStartScale={(c, clientX) => canvasInteractions.handleStartCardScale(c, clientX)}
             onStartResize={(c, handle, e) => canvasInteractions.handleStartCardResize(c, handle, e)}
@@ -407,7 +502,7 @@ export default function App() {
 
       <CanvasModals
         cards={cards}
-        minimapCards={canvasCards}
+        minimapCards={cards}
         groups={displayGroups}
         viewport={viewport}
         setViewport={setViewport}
@@ -420,6 +515,7 @@ export default function App() {
         onReparseLink={pieMenu.handleReparseLink}
         onRecognizeImage={pieMenu.handleRecognizeImage}
         onUngroupBundle={bundles.ungroupBundle}
+        onResetObjectSize={resetObjectSize}
         onDissolveParent={dissolveParent}
         onDetachCardFromBundle={bundles.detachCardFromBundle}
         onDisconnectCardParent={bundles.disconnectCardParent}
@@ -434,9 +530,12 @@ export default function App() {
         }}
         isMinimapExpanded={minimap.isMinimapExpanded}
       />
+      {clipboard.pendingPaste && <ClipboardPastePreview snapshot={clipboard.pendingPaste}
+        screen={clipboard.pasteScreenPosition} zoom={viewport.zoom} />}
       {canvasMenuPosition && <CanvasCommandMenu position={canvasMenuPosition}
-        canCopy={selectedCardIds.size > 0}
-        canPaste={clipboard.copiedCardsRef.current.length > 0}
+        canCopy={selectedCardIds.size > 0 || selectedGroupIds.size > 0}
+        canPaste={clipboard.copiedObjectsRef.current.cards.length + clipboard.copiedObjectsRef.current.groups.length > 0}
+        canUniformWidth={cards.length > 1}
         onCommand={handleCanvasCommand}
         onClose={() => setCanvasMenuPosition(null)} />}
     </div>

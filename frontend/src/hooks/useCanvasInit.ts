@@ -1,6 +1,7 @@
 import { useEffect, MutableRefObject } from 'react';
 import { Card, Group, Viewport } from '../types';
-import { loadInitialData, flushStoredCards } from '../utils/storage';
+import { loadInitialData, flushStoredCards, saveStateDebounced } from '../utils/storage';
+import { normalizeTreeData } from '../utils/groupRelations';
 import { getSavedViewport } from './useViewport';
 import { computeFitViewport } from '../utils/canvas';
 import { bundleCollapsedHeight, bundleCollapsedWidth } from './useBundleGroups';
@@ -20,6 +21,18 @@ export function useCanvasInit({
 }: UseCanvasInitProps) {
   useEffect(() => {
     loadInitialData().then(({ cards: initCards, groups: initGroups }) => {
+      const tree = normalizeTreeData(initCards, initGroups);
+      initCards = tree.cards;
+      initGroups = tree.groups;
+      const bundleScales = new Map(initGroups.filter((group) => group.kind === 'bundle')
+        .map((group) => [group.id, (group.outlinePadding ?? 18) / 18]));
+      let repairedScales = false;
+      initCards = initCards.map((card) => {
+        const expected = card.bundleId ? bundleScales.get(card.bundleId) : undefined;
+        if (expected === undefined || Math.abs((card.contentScale ?? 1) - expected) < 0.001) return card;
+        repairedScales = true;
+        return { ...card, contentScale: expected };
+      });
       const standardSize = 120;
       const normalizedGroups = initGroups.map((g) => {
         if (g.kind === 'bundle') return g;
@@ -38,6 +51,7 @@ export function useCanvasInit({
       });
       setCards(initCards);
       setGroups(normalizedGroups);
+      if (tree.changed || repairedScales) saveStateDebounced(initCards, normalizedGroups);
 
       const savedVp = getSavedViewport();
       if (!savedVp) {

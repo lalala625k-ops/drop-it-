@@ -8,7 +8,7 @@ export interface Card {
   width: number;            // 宽度
   height: number;           // 高度
   zIndex: number;           // 层级
-  groupId?: string | null;  // 所属组ID
+  groupId?: string | null;  // 树中的唯一父节点 ID（卡片、外层 Group 或圆形父物体）
   bundleId?: string | null; // 所属外层 Group ID；与父物体连线独立
   content?: string;         // 文本内容 / OCR全文
   title?: string;           // 网页标题 / 图片提取标题 / 原标题
@@ -21,6 +21,8 @@ export interface Card {
   tags?: string[];          // 卡片标签集合 (如 ["灵感", "待办"])
   isParsing?: boolean;      // 图片/网页元数据解析中状态 (显示旋转加载动效)
   sizeLocked?: boolean;     // 手动/整组缩放后不再由网页头图自动改写高度
+  defaultWidth?: number;    // 手动缩放前的卡片宽度，供恢复默认大小
+  defaultHeight?: number;   // 手动缩放前的卡片高度
   contentScale?: number;    // 整组缩放后的卡片内部内容比例
   color?: string;           // 卡片背景底色 (如 "#ffffff")
   textColor?: string;       // 卡片文字与油墨色 (如 "#1d1d1d")
@@ -37,6 +39,7 @@ export interface Group {
   color?: string;           // 容器强调色
   zIndex?: number;          // 层级 (默认为底板层级)
   kind?: 'parent' | 'bundle'; // 旧数据无 kind 时为圆形父物体
+  parentIds?: string[];       // 外层 Group 的唯一父节点；保留数组字段兼容旧数据，最多一项
   collapsed?: boolean;      // 外层 Group 收起状态
   outlinePadding?: number;  // 外层 Group 轮廓与成员卡片间距，默认 18
   tags?: string[];          // 外层 Group 标签

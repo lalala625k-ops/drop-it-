@@ -1,10 +1,12 @@
 import { useCallback, MutableRefObject } from 'react';
 import { Card, Group } from '../types';
 import { saveStateDebounced } from '../utils/storage';
-import { getParentLinkage } from '../utils/groupRelations';
+import { getParentLinkage, normalizeTreeData } from '../utils/groupRelations';
 import { autoPackCards } from '../utils/packing';
 import { alignCards } from '../utils/alignment';
 import { bundleBounds } from './useBundleGroups';
+import { textCardSize } from '../utils/textCardSize';
+import { restoreCardSize } from '../utils/cardDefaultSize';
 
 interface UseCanvasActionsProps {
   cardsRef: MutableRefObject<Card[]>;
@@ -22,7 +24,7 @@ interface UseCanvasActionsProps {
   clearSelection: () => void;
   refreshGroupBounds: (cards: Card[], groups: Group[]) => Group[];
   createParentWithCollisionAvoidance: (targetWorld: { x: number; y: number }, cards: Card[], existingGroups: Group[]) => Group;
-  createGroupFromSelection: (selectedCards: Card[], cursorPosition?: { x: number; y: number }) => { newGroup: Group; updatedCards: Card[] } | null;
+  createGroupFromSelection: (selectedCards: Card[], cursorPosition?: { x: number; y: number }, hasSelectedBundle?: boolean) => { newGroup: Group; updatedCards: Card[] } | null;
   showToast: (msg: string) => void;
 }
 
@@ -46,34 +48,60 @@ export function useCanvasActions({
   showToast,
 }: UseCanvasActionsProps) {
   const commitState = useCallback((newCards: Card[], newGroups: Group[]) => {
-    setCards(newCards);
-    setGroups(newGroups);
-    saveStateDebounced(newCards, newGroups);
+    const tree = normalizeTreeData(newCards, newGroups);
+    setCards(tree.cards);
+    setGroups(tree.groups);
+    saveStateDebounced(tree.cards, tree.groups);
   }, [setCards, setGroups]);
 
   const handleCardUpdate = useCallback((id: string, updates: Partial<Card>) => {
     pushHistory(cardsRef.current, groupsRef.current);
     setCards((prev) => {
-      const next = prev.map((c) => (c.id === id ? { ...c, ...updates } : c));
+      const next = prev.map((c) => {
+        if (c.id !== id) return c;
+        const updated = { ...c, ...updates };
+        if ((updates.width !== undefined || updates.height !== undefined) && (!c.sizeLocked || updates.type !== undefined)) {
+          const scale = c.bundleId ? c.contentScale || 1 : 1;
+          updated.defaultWidth = updated.width / scale;
+          updated.defaultHeight = updated.height / scale;
+        }
+        return updated;
+      });
       saveStateDebounced(next, groupsRef.current);
       return next;
     });
   }, [cardsRef, groupsRef, pushHistory, setCards]);
 
+  const handleCardTextEdit = useCallback((id: string, updates: Partial<Card>) => {
+    setCards((prev) => {
+      const next = prev.map((card) => card.id === id ? {
+        ...card, ...updates,
+        ...(!card.sizeLocked && (updates.width !== undefined || updates.height !== undefined)
+          ? { defaultWidth: (updates.width ?? card.width) / (card.bundleId ? card.contentScale || 1 : 1),
+            defaultHeight: (updates.height ?? card.height) / (card.bundleId ? card.contentScale || 1 : 1) } : {}),
+      } : card);
+      saveStateDebounced(next, groupsRef.current);
+      return next;
+    });
+  }, [groupsRef, setCards]);
+
   const createCardAtCursor = useCallback((cardData: Partial<Card>): Card => {
     pushHistory(cardsRef.current, groupsRef.current);
     maxZIndexRef.current += 1;
-    const w = cardData.width || 260;
-    const h = cardData.height || 180;
+    const fittedTextSize = (cardData.type || 'text') === 'text' ? textCardSize(cardData.content || '') : null;
+    const w = fittedTextSize?.width || cardData.width || 260;
+    const h = fittedTextSize?.height || cardData.height || 180;
     const center = mouseWorldRef.current;
 
     const newCard: Card = {
-      id: `card-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      id: cardData.id || `card-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       type: cardData.type || 'text',
       x: cardData.x ?? center.x - w / 2,
       y: cardData.y ?? center.y - h / 2,
       width: w,
       height: h,
+      defaultWidth: cardData.defaultWidth ?? w,
+      defaultHeight: cardData.defaultHeight ?? h,
       zIndex: maxZIndexRef.current,
       content: cardData.content || '',
       title: cardData.title,
@@ -97,9 +125,10 @@ export function useCanvasActions({
   const handleUndo = useCallback(() => {
     const prev = undo();
     if (prev) {
-      setCards(prev.cards);
-      setGroups(prev.groups);
-      saveStateDebounced(prev.cards, prev.groups);
+      const tree = normalizeTreeData(prev.cards, prev.groups);
+      setCards(tree.cards);
+      setGroups(tree.groups);
+      saveStateDebounced(tree.cards, tree.groups);
     }
   }, [setCards, setGroups, undo]);
 
@@ -111,12 +140,17 @@ export function useCanvasActions({
     pushHistory(cardsRef.current, groupsRef.current);
     const parentIds = new Set(groupsRef.current.filter((g) => g.kind !== 'bundle' && groupIds.has(g.id)).map((g) => g.id));
     const linkedCardIds = new Set([...parentIds].flatMap((parentId) =>
-      [...getParentLinkage(cardsRef.current, parentId).cardIds]));
-    const nextCards = cardsRef.current
+      [...getParentLinkage(cardsRef.current, parentId, groupsRef.current).cardIds]));
+    let nextCards = cardsRef.current
       .filter((c) => !cardIds.has(c.id) && !linkedCardIds.has(c.id))
-      .map((c) => c.bundleId && groupIds.has(c.bundleId) ? { ...c, bundleId: null } : c);
+      .map((c) => c.bundleId && groupIds.has(c.bundleId) ? { ...c, bundleId: null, contentScale: 1 } : c);
     const occupiedBundles = new Set(nextCards.map((card) => card.bundleId).filter(Boolean));
-    const nextGroups = groupsRef.current.filter((g) => !groupIds.has(g.id) && (g.kind !== 'bundle' || occupiedBundles.has(g.id)));
+    let nextGroups = groupsRef.current.filter((g) => !groupIds.has(g.id) && (g.kind !== 'bundle' || occupiedBundles.has(g.id)));
+    const survivingIds = new Set([...nextCards.map((card) => card.id), ...nextGroups.map((group) => group.id)]);
+    nextCards = nextCards.map((card) => card.groupId && !survivingIds.has(card.groupId)
+      ? { ...card, groupId: null } : card);
+    nextGroups = nextGroups.map((group) => group.parentIds?.some((id) => !survivingIds.has(id))
+      ? { ...group, parentIds: group.parentIds.filter((id) => survivingIds.has(id)).slice(0, 1) } : group);
     commitState(nextCards, refreshGroupBounds(nextCards, nextGroups));
     clearSelection();
   }, [cardsRef, clearSelection, commitState, groupsRef, pushHistory, refreshGroupBounds, selectedCardIdsRef, selectedGroupIdsRef]);
@@ -126,28 +160,37 @@ export function useCanvasActions({
     const newParent = createParentWithCollisionAvoidance(mouseWorldRef.current, cardsRef.current, groupsRef.current);
     setSelectedGroupIds(new Set([newParent.id]));
     saveStateDebounced(cardsRef.current, [...groupsRef.current, newParent]);
-    showToast(`已在光标处创建父物体「${newParent.title}」，按住 Ctrl 拖拽卡片即可链接`);
+    showToast(`已在光标处创建父物体「${newParent.title}」，按住 Ctrl 拖拽卡片或 Group 即可链接`);
   }, [cardsRef, createParentWithCollisionAvoidance, groupsRef, mouseWorldRef, pushHistory, setSelectedGroupIds, showToast]);
 
   const handleGroup = useCallback(() => {
-    const selectedCards = cardsRef.current.filter((c) => selectedCardIdsRef.current.has(c.id));
-    if (selectedCards.length === 0) {
+    const selectedBundleIds = new Set(groupsRef.current
+      .filter((group) => group.kind === 'bundle' && selectedGroupIdsRef.current.has(group.id)).map((group) => group.id));
+    cardsRef.current.filter((card) => selectedCardIdsRef.current.has(card.id) && card.bundleId
+      && groupsRef.current.some((group) => group.id === card.bundleId && group.kind === 'bundle'))
+      .forEach((card) => selectedBundleIds.add(card.bundleId!));
+    const selectedBundles = groupsRef.current.filter((group) => selectedBundleIds.has(group.id));
+    const selectedCards = cardsRef.current.filter((card) => selectedCardIdsRef.current.has(card.id)
+      && (!card.bundleId || !selectedBundleIds.has(card.bundleId)));
+    if (selectedCards.length === 0 && selectedBundles.length === 0) {
       handleCreateNewParentAtCursor();
       return;
     }
     pushHistory(cardsRef.current, groupsRef.current);
-    const res = createGroupFromSelection(selectedCards, mouseWorldRef.current);
+    const res = createGroupFromSelection(selectedCards, mouseWorldRef.current, selectedBundles.length > 0);
     if (!res) return;
 
     const nextCards = cardsRef.current.map((c) => {
       const updated = res.updatedCards.find((u) => u.id === c.id);
       return updated || c;
     });
-    const nextGroups = [...groupsRef.current, res.newGroup];
+    const nextGroups = [...groupsRef.current.map((group) => selectedBundleIds.has(group.id)
+      ? { ...group, parentIds: [res.newGroup.id] }
+      : group), res.newGroup];
     commitState(nextCards, nextGroups);
     setSelectedGroupIds(new Set([res.newGroup.id]));
-    showToast(`已创建父物体「${res.newGroup.title}」，已链接 ${selectedCards.length} 项`);
-  }, [cardsRef, commitState, createGroupFromSelection, groupsRef, handleCreateNewParentAtCursor, mouseWorldRef, pushHistory, selectedCardIdsRef, setSelectedGroupIds, showToast]);
+    showToast(`已创建父物体「${res.newGroup.title}」，已链接 ${selectedCards.length + selectedBundles.length} 项`);
+  }, [cardsRef, commitState, createGroupFromSelection, groupsRef, handleCreateNewParentAtCursor, mouseWorldRef, pushHistory, selectedCardIdsRef, selectedGroupIdsRef, setSelectedGroupIds, showToast]);
 
   const handleUngroup = useCallback(() => {
     const gIds = selectedGroupIdsRef.current;
@@ -157,8 +200,11 @@ export function useCanvasActions({
       ...c,
       groupId: c.groupId && gIds.has(c.groupId) ? null : c.groupId,
       bundleId: c.bundleId && gIds.has(c.bundleId) ? null : c.bundleId,
+      contentScale: c.bundleId && gIds.has(c.bundleId) ? 1 : c.contentScale,
     }));
-    const nextGroups = groupsRef.current.filter((g) => !gIds.has(g.id));
+    const nextGroups = groupsRef.current.filter((g) => !gIds.has(g.id))
+      .map((group) => group.parentIds?.some((id) => gIds.has(id))
+        ? { ...group, parentIds: group.parentIds.filter((id) => !gIds.has(id)) } : group);
     commitState(nextCards, nextGroups);
     setSelectedGroupIds(new Set());
     showToast('已解散所选 Group 或父物体，卡片已保留');
@@ -175,6 +221,35 @@ export function useCanvasActions({
     });
     commitState(nextCards, refreshGroupBounds(nextCards, groupsRef.current));
   }, [cardsRef, commitState, groupsRef, pushHistory, refreshGroupBounds, selectedCardIdsRef]);
+
+  const handleUniformCardWidth = useCallback(() => {
+    const cards = cardsRef.current;
+    if (cards.length < 2) return;
+    const width = Math.max(80, Math.round(cards.reduce((sum, card) => sum + card.width, 0) / cards.length));
+    if (cards.every((card) => card.width === width)) return;
+    pushHistory(cards, groupsRef.current);
+    const nextCards = cards.map((card) => card.width === width ? card : ({
+      ...card, x: card.x + (card.width - width) / 2, width,
+      defaultWidth: card.defaultWidth ?? card.width,
+      defaultHeight: card.defaultHeight ?? card.height,
+      sizeLocked: true,
+    }));
+    commitState(nextCards, refreshGroupBounds(nextCards, groupsRef.current));
+    showToast(`已统一 ${cards.length} 张卡片宽度为 ${width}`);
+  }, [cardsRef, commitState, groupsRef, pushHistory, refreshGroupBounds, showToast]);
+
+  const handleResetCardSize = useCallback((id: string) => {
+    const card = cardsRef.current.find((item) => item.id === id);
+    if (!card || card.bundleId) return;
+    const restored = restoreCardSize(card);
+    if (Math.abs(card.width - restored.width) < 0.5
+      && Math.abs(card.height - restored.height) < 0.5 && !card.sizeLocked) return;
+    pushHistory(cardsRef.current, groupsRef.current);
+    const nextCards = cardsRef.current.map((item) => item.id === id ? restored : item);
+    setCards(nextCards);
+    saveStateDebounced(nextCards, groupsRef.current);
+    showToast('卡片已恢复默认大小');
+  }, [cardsRef, groupsRef, pushHistory, setCards, showToast]);
 
   const handleAlign = useCallback((dir: 'top' | 'bottom' | 'left' | 'right') => {
     const selectedBundleIds = new Set(groupsRef.current
@@ -209,6 +284,7 @@ export function useCanvasActions({
   return {
     commitState,
     handleCardUpdate,
+    handleCardTextEdit,
     createCardAtCursor,
     handleUndo,
     handleDeleteSelected,
@@ -216,6 +292,8 @@ export function useCanvasActions({
     handleGroup,
     handleUngroup,
     handleAutoPack,
+    handleUniformCardWidth,
+    handleResetCardSize,
     handleAlign,
   };
 }

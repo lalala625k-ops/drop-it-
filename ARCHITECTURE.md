@@ -22,7 +22,7 @@
 | `.gitignore` | 忽略依赖、构建输出、Python 缓存及独立管理的 `backend/data/` |
 | `.agents/`、`skills/` | 项目工作流技能与参考材料，包括代码精简技能 |
 | `frontend/package.json` | 依赖；`dev`、`build`（tsc + Vite）、`preview` 命令 |
-| `frontend/vite.config.ts` | 5173 开发端口；`/api` 代理到后端 8000 |
+| `frontend/vite.config.ts` | 5173 开发端口；`/api` 代理到后端 8000；单独启动 Vite 时尝试启动缺失的本地后端 |
 | `frontend/tsconfig.json` | TypeScript 编译配置 |
 | `frontend/tailwind.config.js` | 颜色、字体、字距和圆角 token |
 | `frontend/postcss.config.js` | Tailwind 与 Autoprefixer 插件配置 |
@@ -33,9 +33,9 @@
 ### 3.1 入口、类型与常量
 
 - `main.tsx`：React 挂载入口、StrictMode 和全局样式导入。
-- `App.tsx`：组织各 Hook、DOM 画布层、SVG 连线、卡片、父物体和弹窗；在捕获阶段将对象上的画布导航手势交给画布，并按鼠标按下状态控制选中框显示；空白右键点击打开画布命令饼菜单，右键拖动平移画布。
+- `App.tsx`：组织各 Hook、DOM 画布层、SVG 连线、卡片、父物体和弹窗；在捕获阶段将对象上的画布导航手势交给画布，并按鼠标按下状态控制选中框显示；空白右键按下打开画布命令饼菜单。
 - `index.css`：默认浅色主题、无网格画布、字体和 3px 滚动条。
-- `types/index.ts`：定义 `CardType`、`Card`、`Group`、`Viewport`、`Rect`、`SnapLine`、`HistoryState`。视口使用 `x/y/zoom`；`Card.groupId` 表示圆形父物体连线，`Card.bundleId` 表示外层 Group 成员。`Group.kind` 区分两类节点，旧数据无 kind 时视为父物体。选区由 Hook 内的 ID 集合维护。
+- `types/index.ts`：定义 `CardType`、`Card`、`Group`、`Viewport`、`Rect`、`SnapLine`、`HistoryState`。视口使用 `x/y/zoom`；`Card.groupId` 指向树中的唯一父节点（卡片、外层 Group 或圆形父物体），`Card.bundleId` 表示外层 Group 成员。`Group.parentIds` 为兼容旧数据保留数组字段，但只使用一项。`Group.kind` 区分两类节点，旧数据无 kind 时视为父物体。
 
 ### 3.2 工具层（`utils/`）
 
@@ -48,11 +48,18 @@
 | `dateParser.ts` | 日期、时间和自然语言输入解析与格式化 |
 | `headingUtils.ts` | 解析标题的 `# `、`## ` 前缀，更多井号映射为二级，返回级别、原文和去前缀文本 |
 | `cardBounds.ts` | 统一计算卡片本体加悬浮标题的逻辑边界，供框选、碰撞、避让、对齐、装箱和视口使用 |
+| `textCardSize.ts` | 以默认 15px 字号测量文本宽度并估算换行，为新建和外部粘贴的文本卡片确定紧凑宽高 |
+| `cardDefaultSize.ts` | 记录与推断卡片默认尺寸；组外卡片复位时保持中心位置，旧数据按内容或类型回退 |
+| `feishu.ts` | 识别飞书/Lark 域名并提供飞书图标地址；前端将飞书网页卡统一按无封面显示 |
 | `tagUtils.ts` | 统计已有标签频率，生成高频列表，不足时补入建议标签 |
-| `groupRelations.ts` | 计算父物体的有效关联卡片与外层 Group；组内任一成员直连时整组参与联动，成员原始 `groupId` 保留供脱组恢复 |
-| `groupColors.ts` | 六等分色相的基础色、同色系变体及文字对比色计算 |
-| `storage.ts` | 引导卡片、LocalStorage 容错、400ms 防抖保存、后端同步、关闭前刷新及 JSON 导入导出 |
-| `ingestScreenshot.ts` | 粘贴/拖入图片时创建图片卡片并异步上传，保留原图等待用户从右键菜单选择识别方式 |
+| `groupRelations.ts` | 统一树节点的父子关系、后代遍历、环检测与旧多父连接规范化；外层 Group 的成员视为该 Group 的下级 |
+| `linkEndpoints.ts` | 按卡片矩形、父物体圆形和 Group 展开/收起轮廓，计算两对象边界最近的连线端点与交互引线起点 |
+| `treeTargets.ts` | Ctrl+Shift 引线连接时查找卡片、外层 Group、圆形父物体目标与中心点 |
+| `groupColors.ts` | 四个渐变节点、连续取色插值及文字对比色计算 |
+| `pieMenuGeometry.ts` | 对象与空白画布菜单共用的边缘定位、钟面坐标、右键划动阈值和方向扇区命中 |
+| `storage.ts` | 引导卡片、立即写入带待同步标记的 LocalStorage、400ms 防抖及顺序后端同步、刷新恢复、JSON 导入导出 |
+| `pendingImages.ts` | 在 IndexedDB 按卡片 ID 暂存原始图片，刷新时恢复因 LocalStorage 容量限制剥离的 Base64 图片 |
+| `ingestScreenshot.ts` | 粘贴/拖入图片时立即建卡并暂存原图，异步上传成功后换成持久资源地址；原图等待用户从右键菜单选择识别方式 |
 | `recognizeCardImage.ts` | 图片卡右键 OCR/原链接识别请求及转换字段；原链接未命中时保留图片 |
 
 ### 3.3 状态与交互层（`hooks/`）
@@ -60,42 +67,47 @@
 | 文件 | 职责 |
 | :--- | :--- |
 | `useViewport.ts` | 视口和光标坐标、每档上滚 1.12 倍/下滚 0.88 倍的指针锚定缩放、单卡聚焦/还原、全览；以 `pinboard_viewport_v1`、200ms 防抖记忆视口 |
-| `useVirtualViewport.ts` | 未收起卡片超过 40 张或 Group/父物体超过 10 个时裁剪离屏对象；300 屏幕像素缓冲，选中对象始终保留；返回可见卡片 ID 供连线裁剪 |
-| `useCanvasInteractions.ts` | 鼠标手势状态机：平移、Alt+中键指针锚定连续缩放、框选、拖动、Ctrl 引线连接、卡片缩放、轮盘；组内卡片断线按同一 Group 与同一父物体批量处理；卡片及父物体拖动松手时调用 `commitState` 保存 |
-| `useCanvasActions.ts` | 新建、更新、删除、解散、编组、撤销、装箱、方向对齐；选中外层 Group 时展开成员卡片参与对齐，重算并保存组边界；`commitState` 更新卡片/父物体并排队保存 |
-| `useCanvasInit.ts` | 加载数据，保持旧父物体中心并统一尺寸为 120px；恢复视口或全览；注册关闭前刷新 |
-| `useCanvasDrop.ts` | 处理首个拖入文件：JSON 备份替换卡片/父物体，或调用截图识别流程 |
+| `useVirtualViewport.ts` | 未收起卡片超过 40 张或 Group/父物体超过 10 个时裁剪离屏对象；300 屏幕像素缓冲，选中对象和选中父物体的关联对象始终保留；返回可见卡片 ID 供连线裁剪 |
+| `useCanvasInteractions.ts` | 鼠标手势状态机：平移、Alt+中键指针锚定连续缩放、框选、拖动、Ctrl+Shift 引线连接或单击断开、卡片缩放、轮盘；卡片与外层 Group 可连到卡片、Group 或圆形父物体，拒绝成环；普通拖动带动自身后代，Ctrl 拖动只移动当前对象（Group 含成员） |
+| `useCanvasActions.ts` | 新建、更新、删除、解散、编组、撤销、装箱、方向对齐、组外卡片恢复默认尺寸及全部卡片按平均宽度统一宽度；选中外层 Group 时展开成员卡片参与对齐，重算并保存组边界；`commitState` 更新卡片/父物体并排队保存 |
+| `useCanvasInit.ts` | 加载时把旧多父关系收敛为单父树，修正 Group 成员的文字缩放比例，保持旧父物体中心并统一尺寸为 120px；恢复视口或全览；注册关闭前刷新 |
+| `useCanvasDrop.ts` | 处理首个拖入图片文件、JSON 备份，或将外部图片 URL、网页链接和文本交给共用摄入流程 |
 | `useSelection.ts` | 卡片、外层 Group 与父物体选中集合、Shift 选择、清空及矩形相交框选；Group 命中时避免重复框选内部成员 |
-| `useCardDrag.ts` | 拖动初始坐标与位移、单卡 Shift+Space 磁吸、父物体普通/联动移动及连接目标检测 |
-| `useBundleGroups.ts` | 外层 Group 的无名创建与六色循环默认色、包含成员悬浮标题的凸包轮廓与动态边界、收起/展开、整体拖动与四角等比缩放；拖动卡片松手时按中心点由外跨入轮廓/收起列表判断入组；指定父物体的整组断线及解散；变更走历史与防抖保存 |
+| `useCardDrag.ts` | 拖动初始坐标与位移、单卡 Shift+Space 磁吸及连接目标检测；普通拖动联动下级分支、Ctrl/Cmd 仅移动当前对象由 `useCanvasInteractions.ts` 处理 |
+| `useBundleGroups.ts` | 外层 Group 的无名无色创建、包含成员悬浮标题的凸包轮廓与动态边界、收起/展开、整体拖动与四角等比缩放；所有成员内容随组缩放，恢复默认大小按组中心复位所有成员；拖动卡片松手时按中心点由外跨入轮廓/收起列表判断入组；指定父物体的整组断线及解散；变更走历史与防抖保存 |
 | `useCardResize.ts` | 八向缩放、Ctrl+Alt 水平拖动等比缩放及尺寸限制；保留父物体缩放辅助接口 |
-| `useClipboardPaste.ts` | 内部卡片 JSON、图片、URL、纯文本识别，HTML 仅提取链接；图片调用共用截图识别流程 |
-| `useCardClipboard.ts` | 内存/系统剪贴板复制；光标处粘贴或 Ctrl+D 克隆，保持相对位置，重建 ID/层级并清除 `groupId` 和 `bundleId` |
-| `useGroups.ts` | 父物体状态、命名、新建和绑定；默认 120px 与六色循环默认色；空父物体新建执行有限次数的 5px 避障；`refreshGroupBounds` 保持独立节点边界 |
+| `useClipboardPaste.ts` | 内部对象 JSON 暂存并等待鼠标单击；外部图片、图片 URL、网页链接和文本立即创建；拖入的数据也走同一识别流程，图片文件调用共用截图摄入函数 |
+| `useCardClipboard.ts` | 复制选中的卡片、父物体、外层 Group 及其有效成员；暂存跟随鼠标的粘贴快照，单击后按整体中心放置并重建 ID、内部连线与成员关系；Ctrl+D 仍直接克隆选中卡片 |
+| `canvasClipboard.ts` | 收集复制对象、计算整体包围盒与中心、克隆时重映射 `groupId` 和 `bundleId` |
+| `ClipboardPastePreview.tsx` | 粘贴确认前显示跟随鼠标的卡片、父物体、Group 和连线轮廓 |
+| `useGroups.ts` | 父物体状态、命名、新建和绑定；默认 120px 与四色循环默认色；空父物体新建执行有限次数的 5px 避障；`refreshGroupBounds` 保持独立节点边界 |
 | `useHistory.ts` | 最多 30 份卡片/父物体深拷贝快照，提供 `pushHistory` 和 `undo`，当前没有 redo |
 | `useShortcuts.ts` | 新建、删除、撤销、编组/解散、Alt/Ctrl+方向键对齐、复制、搜索、备份和粘贴监听；M 键及失焦控制小地图 |
 | `useMinimapState.ts` | M 键控制常驻小地图的大图模式，几何映射在 `MinimapNav.tsx` |
-| `usePieMenuState.ts` | 卡片与 Group 共用轮盘，处理日期/标题/标签及 Group/父物体颜色；图片 OCR/原链接识别、网页重新解析、历史与保存 |
+| `usePieMenuState.ts` | 以卡片、外层 Group、父物体的显式目标类型记录当前轮盘；处理日期/标题/标签及父物体颜色、图片识别、网页重新解析、历史与保存 |
 
 ### 3.4 组件层（`components/`）
 
 | 文件 | 职责 |
 | :--- | :--- |
 | `CardComponent.tsx` | memo 卡片容器、坐标/尺寸/层级、加粗边框、链接点击保护、300ms 描述提示和子组件组装；组内卡片屏幕较短边不大于 20px 时显示简化缩略图 |
-| `card/CardBodyContent.tsx` | 图片/网页/纯文本渲染；文本及网页原标题编辑、封面比例调高；当前图片分支显示 OCR 首行但不展示全文 |
+| `card/CardBodyContent.tsx` | 图片/网页/纯文本渲染；文字卡选中后可直接编辑和选择正文，失焦清除并重建文本框以移除残留选区，按组缩放比例调整未锁定卡片尺寸；网页原标题编辑、封面比例调高；飞书网页卡隐藏封面并显示图标 |
+| `FeishuLogo.tsx` | 飞书网页卡标题和收起 Group 列表使用的图标，远程图标失效时回退到文字标记 |
 | `card/CardHeaderBadges.tsx` | 日期徽标；标签由正文分支绘制 |
 | `card/CardResizeHandles.tsx` | 八向缩放手柄和方向类型 |
 | `card/FloatingHeaderTitle.tsx` | 独立悬浮标题、两级显示、就地编辑保存；24px/900 或 18px/700 |
-| `GroupComponent.tsx` | 120px 圆形父物体、未选中态组色、关联数量、名称编辑及保留子卡片的解散按钮 |
+| `GroupComponent.tsx` | 120px 圆形父物体、选中仍保留组色并加深轮廓、圆内名称和关联数量、圆内名称编辑及保留子卡片的解散按钮 |
 | `BundleGroupComponent.tsx` | 外层 Group 凸包多边形虚线轮廓与组色淡填充、最近凸包顶点上的四个缩放点、透明底悬浮名称、轮廓外左上方的方形收起/展开按钮、收起态成员列表及网站图标、右键饼菜单入口 |
-| `MinimapNav.tsx` | 左下角常驻小地图与居中的 M 键大图、世界范围/比例、卡片/圆形父物体缩略图及展开 Group 的凸包色区；组内卡片优先继承关联父物体颜色；单击 100% 居中和拖框适配视口 |
-| `ParentLinkLines.tsx` | 父物体到独立卡片或 Group 的 SVG 连线；Group 内同一父物体的多条线合并为一条，从父物体中心连到 Group 展开轮廓/收起列表的边缘；静置色和线宽按成员数由 1px Ash 渐变至 2px Ink，10 张封顶，连线整体为 80% 不透明度 |
+| `MinimapNav.tsx` | 左下角常驻小地图与居中的 M 键大图、世界范围/比例、卡片/圆形父物体缩略图及展开 Group 的凸包色区；组内卡片不绘制，Group 与独立卡片优先继承所连父物体颜色，无色时为黑色；单击 100% 居中和拖框适配视口 |
+| `ParentLinkLines.tsx` | 树中任意上级节点到卡片或 Group 的 SVG 连线；两端都落在对象边界的最近点，选中节点会加粗其后代分支 |
 | `SnapGuides.tsx` | 拖动磁吸的水平/垂直辅助虚线 |
 | `SelectionBox.tsx` | 框选矩形 |
-| `CanvasCommandMenu.tsx` | 空白处右键命令饼菜单，承载新建、Group、搜索、复制、粘贴及全览 |
-| `CanvasModals.tsx` | 聚合对象轮盘、搜索及小地图；Group 右键复用卡片饼菜单并可设置颜色 |
+| `CanvasCommandMenu.tsx` | 空白处右键按下立即打开原有八项方位的命令饼菜单，按钮使用两个汉字的短标签；与对象菜单共用扇区手势、边缘定位与取消规则 |
+| `GradientColorArc.tsx` | 将黄、粉、蓝、白渐变绘成左侧 64 档半圆环，悬停显示白色主环与凸出的当前色扇形，按点击或拖动位置取色并提交 |
+| `CanvasModals.tsx` | 聚合对象轮盘、焦点蒙版、搜索及小地图；解析显式菜单目标并按对象能力连接操作 |
+| `PieMenuFocusOverlay.tsx` | 对象轮盘打开时覆盖搜索弹窗的 Ink/30 模糊蒙版，并把当前对象的 DOM 快照原位显示在蒙版上方；外层 Group 同时保留可见的组内卡片 |
 | `SearchModal.tsx` | 卡片字段的大小写不敏感子串过滤；输入后显示单行便签结果；键盘选择和聚焦 |
-| `PieDateMenu.tsx` | 按文字/网页卡、原始图片、外层 Group 与圆形父物体选择不同的紧凑圆形按钮布局；Group/父物体颜色入口含六色轮盘和右键细分轮盘；组内卡片可脱离 Group，连接父物体的卡片可断线；支持滑向松手或点击 |
+| `PieDateMenu.tsx` | 按显式对象类型筛选固定钟面槽位；统一显示两个汉字的短标签（NOW 除外），完整动作由悬停说明表达；原始图片也有通用整理入口，父物体左内圈保留 180° 色环；右键划向有效扇区或左键点击执行 |
 | `PieDateInputModal.tsx` | 日期输入、解析校验、保存和清除 |
 | `PieTagModal.tsx` | 标签检索、新标签输入和勾选切换 |
 | `PieTitleInputModal.tsx` | 悬浮标题输入/清除，保留 Markdown 字符并提示原标题 |
@@ -126,7 +138,7 @@
 | `services/scrapers/protected/x_twitter.py` | P-005：FxTwitter 元数据及 Twitterbot SSR 回退 |
 | `services/scrapers/protected/shens_blog.py` | P-007：Shen’s Blog 页面的标题和封面元数据 |
 | `services/scrapers/experimental/__init__.py` | 注册飞书试验解析器 |
-| `services/scrapers/experimental/feishu.py` | E-001：飞书/Lark 文档识别；首页头图仍待修复 |
+| `services/scrapers/experimental/feishu.py` | E-001：飞书/Lark 文档标题识别，统一返回无封面信息卡 |
 | `tests/test_protected_scrapers.py` | 保护状态、URL 匹配、注册列表等断言；线上有效性仍需真实 URL 验证 |
 | `data/cards.json` | 卡片和父物体全量数据 |
 | `data/assets/` | 上传图片二进制文件 |
@@ -134,12 +146,12 @@
 
 ## 5. 数据流与修改联动
 
-1. **加载**：后端非空数据优先，失败或为空时读取非空本地缓存，再降级到引导卡片。启动时只规范化圆形父物体尺寸，外层 Group 保留原尺寸与收起状态；视口单独恢复。
-2. **保存**：卡片及父物体拖动松手调用 `commitState`；外层 Group 操作调用 `saveStateDebounced`；400ms 后写本地并异步 POST 全量数据。关闭前调用 `flushStoredCards` 并尝试 beacon。父物体重命名仍缺少独立保存调用；后端错误当前静默处理，没有版本冲突合并或可靠重试队列。
-3. **图片**：粘贴/拖入先创建 Base64 图片卡并异步上传，成功后换成 URL。图片右键菜单选择 OCR 时转文本；选择恢复 B 站/X 原链接时，命中则转网页卡，未命中则保留原图并提示。本地写入失败时仍会尝试剥离超过 50,000 字符的 Base64 图片。
+1. **加载**：未同步的本地变更优先恢复，否则读取后端非空数据；失败或为空时读取本地缓存，再降级到引导卡片。启动时规范化树连接和圆形父物体尺寸，外层 Group 保留原尺寸与收起状态；视口单独恢复。
+2. **保存**：卡片及父物体拖动松手调用 `commitState`；外层 Group 操作调用 `saveStateDebounced`；立即写入带待同步标记的本地数据，400ms 防抖后异步 POST 全量数据。关闭前调用 `flushStoredCards` 并尝试 beacon。父物体双击就地重命名仍缺少独立保存调用；后端全量保存错误当前静默处理，没有版本冲突合并或可靠重试队列。
+3. **图片**：粘贴/拖入先在 IndexedDB 暂存并创建 Base64 图片卡，再异步上传，成功后换成 URL；后端断开时保留本地图片。图片右键菜单选择 OCR 时转文本；选择恢复 B 站/X 原链接时，命中则转网页卡，未命中则保留原图并提示。本地写入失败时仍会尝试剥离超过 50,000 字符的 Base64 图片，加载时从 IndexedDB 补回。
 4. **设置**：`pinboard_viewport_v1` 仅存浏览器，不包含在后端数据及 JSON 导出中。画布和主画布卡片使用固定配色；Group/父物体的 `color` 随 `groups` 写入本地、后端和 JSON 备份，旧卡片颜色字段保留兼容但不参与主画布卡片绘制。
 5. **备份**：JSON 导出 `{cards, groups}`，保留现有 `image` 值（URL 或 Base64），不打包 URL 指向文件。迁移须另带 `assets/`、`screenshots/`；远程图片仍依赖原站。
-6. **字段联动**：修改前端类型时同时考虑后端模型、新建/更新、复制、导入导出及历史快照。复制卡片时清除 `groupId` 与 `bundleId`；`isParsing` 为前端临时字段，后端不保存。父物体与外层 Group 的有效关联在运行时由卡片原始 `groupId` 和 `bundleId` 计算，不额外写入成员连接状态；脱组保留原始直连状态。
+6. **字段联动**：修改前端类型时同时考虑后端模型、新建/更新、复制、导入导出及历史快照。复制对象时重映射快照内部 `groupId`、`bundleId` 和 Group 的 `parentIds`；未复制的外层 Group 不承接新卡片。`isParsing` 为前端临时字段，后端不保存。树状关系由独立卡片的 `groupId`、Group 的 `parentIds[0]` 与成员卡片的 `bundleId` 共同确定；打组时会清除成员原有的单独上级连接，脱组时成员和下级分支改接原 Group 的上级。
 
 ## 6. 修改入口速查
 
@@ -154,6 +166,6 @@
 | 粘贴/拖入、图片上传和 OCR | `useClipboardPaste.ts`、`useCanvasDrop.ts`、后端 assets/parser 路由 |
 | 固定视觉 token | `index.css`、`tailwind.config.js`、`DESIGN_SPEC.md` |
 | 小地图与裁剪 | `MinimapNav.tsx`、`useMinimapState.ts`、`useVirtualViewport.ts`、`ParentLinkLines.tsx` |
-| Group/父物体颜色 | `utils/groupColors.ts`、`PieDateMenu.tsx`、`usePieMenuState.ts`、`MinimapNav.tsx`、`BundleGroupComponent.tsx`、`GroupComponent.tsx` |
+| 父物体颜色 | `utils/groupColors.ts`、`PieDateMenu.tsx`、`usePieMenuState.ts`、`MinimapNav.tsx`、`BundleGroupComponent.tsx`、`GroupComponent.tsx` |
 | 保存、备份、恢复 | `utils/storage.ts`、`useCanvasInit.ts`、后端 cards/storage 模块 |
 | 站点元数据 | `scrapers/registry.py`、站点模块；保护范围见台账 |

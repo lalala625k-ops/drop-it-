@@ -66,7 +66,11 @@ export function useCardResize() {
     const newW = Math.max(startW + delta, 80);
     const newH = newW / aspectRatio;
 
-    setCards((prev) => prev.map((c) => (c.id === card.id ? { ...c, width: newW, height: newH } : c)));
+    setCards((prev) => prev.map((c) => (c.id === card.id
+      ? { ...c, width: newW, height: newH,
+        defaultWidth: c.defaultWidth ?? c.width / (c.contentScale ?? 1),
+        defaultHeight: c.defaultHeight ?? c.height / (c.contentScale ?? 1),
+        sizeLocked: true } : c)));
   }, []);
 
   const updateResize = useCallback((screenX: number, screenY: number, zoom: number, setCards: React.Dispatch<React.SetStateAction<Card[]>>) => {
@@ -93,7 +97,11 @@ export function useCardResize() {
       newY = startCardY + (startH - newH);
     }
 
-    setCards((prev) => prev.map((c) => (c.id === cardId ? { ...c, x: newX, y: newY, width: newW, height: newH } : c)));
+    setCards((prev) => prev.map((c) => (c.id === cardId
+      ? { ...c, x: newX, y: newY, width: newW, height: newH,
+        defaultWidth: c.defaultWidth ?? c.width / (c.contentScale ?? 1),
+        defaultHeight: c.defaultHeight ?? c.height / (c.contentScale ?? 1),
+        sizeLocked: true } : c)));
   }, []);
 
   const updateGroupResize = useCallback((screenX: number, screenY: number, zoom: number, setGroups: React.Dispatch<React.SetStateAction<Group[]>>) => {

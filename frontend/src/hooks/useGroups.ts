@@ -24,7 +24,7 @@ export function useGroups(initialGroups: Group[] = []) {
         width,
         height,
         zIndex: 5,
-        color: groupBaseColor(GROUP_COLOR_FAMILIES[groupsRef.current.filter((group) => group.kind !== 'bundle').length % 6].hue),
+        color: groupBaseColor(GROUP_COLOR_FAMILIES[groupsRef.current.filter((group) => group.kind !== 'bundle').length % GROUP_COLOR_FAMILIES.length].name),
       };
 
       setGroups((prev) => [...prev, newParent]);
@@ -68,15 +68,15 @@ export function useGroups(initialGroups: Group[] = []) {
   );
 
   const createGroupFromSelection = useCallback(
-    (selectedCards: Card[], cursorPosition?: { x: number; y: number }): { newGroup: Group; updatedCards: Card[] } | null => {
-      if (selectedCards.length === 0) return null;
+    (selectedCards: Card[], cursorPosition?: { x: number; y: number }, hasSelectedBundle = false): { newGroup: Group; updatedCards: Card[] } | null => {
+      if (selectedCards.length === 0 && !hasSelectedBundle) return null;
       const box = getBoundingBox(selectedCards, []);
-      if (!box) return null;
+      if (!box && !cursorPosition) return null;
 
       const size = 120;
       const groupNum = groupsRef.current.length + 1;
-      const cx = cursorPosition ? cursorPosition.x : box.x + box.width / 2;
-      const cy = cursorPosition ? cursorPosition.y : box.y + box.height / 2;
+      const cx = cursorPosition ? cursorPosition.x : box!.x + box!.width / 2;
+      const cy = cursorPosition ? cursorPosition.y : box!.y + box!.height / 2;
 
       const newGroup: Group = {
         id: `parent-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -86,7 +86,7 @@ export function useGroups(initialGroups: Group[] = []) {
         width: size,
         height: size,
         zIndex: 5,
-        color: groupBaseColor(GROUP_COLOR_FAMILIES[groupsRef.current.filter((group) => group.kind !== 'bundle').length % 6].hue),
+        color: groupBaseColor(GROUP_COLOR_FAMILIES[groupsRef.current.filter((group) => group.kind !== 'bundle').length % GROUP_COLOR_FAMILIES.length].name),
       };
 
       const selectedIdSet = new Set(selectedCards.map((c) => c.id));

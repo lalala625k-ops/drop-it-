@@ -14,6 +14,7 @@ interface UseCanvasDropProps {
   pushHistory: (cards: Card[], groups: Group[]) => void;
   createCardAtCursor: (cardData: Partial<Card>) => Card;
   handleCardUpdate: (id: string, updates: Partial<Card>) => void;
+  handleDroppedData: (data: DataTransfer) => Promise<void>;
   showToast: (msg: string) => void;
 }
 
@@ -27,6 +28,7 @@ export function useCanvasDrop({
   pushHistory,
   createCardAtCursor,
   handleCardUpdate,
+  handleDroppedData,
   showToast,
 }: UseCanvasDropProps) {
   const handleDrop = useCallback(
@@ -35,9 +37,7 @@ export function useCanvasDrop({
       const dropWorld = screenToWorld(e.clientX, e.clientY, viewportRef.current);
       mouseWorldRef.current = dropWorld;
       const file = e.dataTransfer.files?.[0];
-      if (!file) return;
-
-      if (file.name.endsWith('.json')) {
+      if (file?.name.toLowerCase().endsWith('.json')) {
         try {
           const restored = await importBackupFromFile(file);
           pushHistory(cardsRef.current, groupsRef.current);
@@ -51,7 +51,7 @@ export function useCanvasDrop({
         return;
       }
 
-      if (file.type.startsWith('image/')) {
+      if (file && (file.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|avif|svg)$/i.test(file.name))) {
         await ingestScreenshot(file, {
           createCard: createCardAtCursor,
           updateCard: handleCardUpdate,
@@ -59,7 +59,9 @@ export function useCanvasDrop({
           showToast,
           position: dropWorld,
         });
+        return;
       }
+      await handleDroppedData(e.dataTransfer);
     },
     [
       viewportRef,
@@ -72,6 +74,7 @@ export function useCanvasDrop({
       showToast,
       createCardAtCursor,
       handleCardUpdate,
+      handleDroppedData,
     ]
   );
 

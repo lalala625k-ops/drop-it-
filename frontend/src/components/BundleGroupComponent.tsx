@@ -2,11 +2,14 @@ import React from 'react';
 import { Card, Group } from '../types';
 import { bundleCollapsedHeight, bundleCollapsedWidth, bundleOutline, bundleOutlinePoints, bundleResizeHandles, BundleResizeCorner } from '../hooks/useBundleGroups';
 import { parseMarkdownHeading } from '../utils/headingUtils';
+import { isFeishuUrl } from '../utils/feishu';
+import { FeishuLogo } from './FeishuLogo';
 
 interface Props {
   group: Group;
   members: Card[];
   selected: boolean;
+  parentHighlighted?: boolean;
   onDrag: (event: React.MouseEvent) => void;
   onResize: (corner: BundleResizeCorner, event: React.MouseEvent) => void;
   onToggle: () => void;
@@ -16,6 +19,7 @@ interface Props {
 const MemberIcon: React.FC<{ card: Card }> = ({ card }) => {
   const [iconIndex, setIconIndex] = React.useState(0);
   const icons = card.favicon ? [card.favicon] : [];
+  if (card.type === 'web' && isFeishuUrl(card.url)) return <FeishuLogo className="w-4 h-4" />;
   if (card.type === 'web' && card.url) {
     try {
       const siteIcon = new URL('/favicon.ico', card.url).href;
@@ -33,7 +37,7 @@ const memberTitle = (card: Card) => {
   return title || (card.type === 'web' ? '网页' : card.type === 'image' ? '图片' : '便签');
 };
 
-export const BundleGroupComponent: React.FC<Props> = ({ group, members, selected, onDrag, onResize, onToggle, onOpenPieMenu }) => {
+export const BundleGroupComponent: React.FC<Props> = ({ group, members, selected, parentHighlighted = false, onDrag, onResize, onToggle, onOpenPieMenu }) => {
   const tags = group.tags || [];
   const collapsed = !!group.collapsed;
   const parsedTitle = parseMarkdownHeading(group.title);
@@ -52,7 +56,6 @@ export const BundleGroupComponent: React.FC<Props> = ({ group, members, selected
   const openMenu = (event: React.MouseEvent) => {
     event.preventDefault();
     event.stopPropagation();
-    onOpenPieMenu(event.clientX, event.clientY);
   };
   const handleOutlineMouseDown = (event: React.MouseEvent) => {
     if (event.button === 2) { event.preventDefault(); event.stopPropagation(); return; }
@@ -62,12 +65,12 @@ export const BundleGroupComponent: React.FC<Props> = ({ group, members, selected
   return <div data-bundle-id={group.id} className="absolute pointer-events-none z-[0]"
     style={{ left: group.x, top: group.y, width: collapsed ? bundleCollapsedWidth(group.width) : group.width,
       height: collapsed ? bundleCollapsedHeight(members.length) : group.height,
-      border: collapsed ? `2px solid ${selected ? '#1d1d1d' : '#a8a7a2'}` : undefined,
+      border: collapsed ? `${parentHighlighted ? 4 : 2}px solid ${selected || parentHighlighted ? '#1d1d1d' : '#a8a7a2'}` : undefined,
       backgroundColor: collapsed ? (group.color || '#ffffff') : 'transparent', color: '#1d1d1d' }}>
     {!collapsed && <svg className="absolute inset-0 w-full h-full overflow-visible pointer-events-none" viewBox={`0 0 ${group.width} ${group.height}`}>
       <path d={outline} fill={group.color || '#ffffff'} fillOpacity="0.2" stroke="transparent" strokeWidth="16" className="pointer-events-auto cursor-move"
         onMouseDown={handleOutlineMouseDown} onContextMenu={openMenu} />
-      <path d={outline} fill="none" stroke={selected ? '#1d1d1d' : '#a8a7a2'} strokeWidth="2" strokeDasharray="7 5" pointerEvents="none" />
+      <path d={outline} fill="none" stroke={selected || parentHighlighted ? '#1d1d1d' : '#a8a7a2'} strokeWidth={parentHighlighted ? 4 : 2} strokeDasharray="7 5" pointerEvents="none" />
     </svg>}
     {!collapsed && selected && bundleResizeHandles(members, group).map(({ corner, point }) => (
       <button key={corner} type="button" data-resize-handle={corner} title={`拖动缩放 Group（${corner.toUpperCase()}）`}

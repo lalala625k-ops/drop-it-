@@ -1,15 +1,14 @@
 # ==============================================================================
 # RULE ID: E-001 | Feishu (飞书 / Lark)
-# STATUS: ⏳ EXPERIMENTAL (首页头图仍需修复；私密文档仍需鉴权)
+# STATUS: ⏳ EXPERIMENTAL (统一无封面；私密文档仍需鉴权)
 # ==============================================================================
 
 import re
 from typing import Optional
-from urllib.parse import urljoin
 import requests
 from bs4 import BeautifulSoup
 from backend.services.scrapers.base import BaseScraper, ScrapedMetadata
-from backend.services.screenshot_service import detect_local_proxy, is_auth_url
+from backend.services.screenshot_service import detect_local_proxy
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -28,7 +27,6 @@ class FeishuScraper(BaseScraper):
     def scrape(self, url: str) -> Optional[ScrapedMetadata]:
         title = ""
         description = ""
-        image = ""
 
         try:
             proxy = detect_local_proxy()
@@ -37,11 +35,6 @@ class FeishuScraper(BaseScraper):
             resp.encoding = resp.apparent_encoding or "utf-8"
             html = resp.text
             soup = BeautifulSoup(html, "html.parser")
-            page_title = soup.title.get_text(strip=True) if soup.title else ""
-            is_login_page = is_auth_url(resp.url) or any(
-                marker in page_title.lower() for marker in ("登录", "login", "sign in", "accounts")
-            )
-
             fake_title = soup.find(id="fakeTitle")
             if fake_title:
                 title = fake_title.get_text(strip=True)
@@ -55,14 +48,6 @@ class FeishuScraper(BaseScraper):
             if desc_m:
                 description = desc_m.group(1).encode("utf-8").decode("unicode_escape", errors="ignore")
 
-            if not is_login_page:
-                for key in ("og:image", "twitter:image", "twitter:image:src"):
-                    tag = soup.find("meta", attrs={"property": key}) or soup.find("meta", attrs={"name": key})
-                    if tag and tag.get("content"):
-                        candidate = urljoin(resp.url, tag["content"].strip())
-                        if candidate.startswith(("https://", "http://")):
-                            image = candidate
-                            break
         except Exception as e:
             print(f"[Experimental Feishu] Request error: {e}")
 
@@ -86,7 +71,7 @@ class FeishuScraper(BaseScraper):
         return {
             "title": title,
             "description": description or "飞书协同办公文档 (待登录鉴权突破)",
-            "image": image,
-            "favicon": "https://sf3-scmcdn-cn.feishucdn.com/goofy/ee/suite/passport/favicon.ico",
+            "image": "",
+            "favicon": "https://www.feishu.cn/favicon.ico",
             "url": url,
         }

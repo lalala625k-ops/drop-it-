@@ -3,18 +3,6 @@ import { Card, Group, SnapLine } from '../types';
 import { calculateMagneticSnapping } from '../utils/snap';
 import { isPointInRect } from '../utils/canvas';
 import { getParentLinkage } from '../utils/groupRelations';
-import { cardVisualBounds } from '../utils/cardBounds';
-
-// Helper to detect if a card overlaps or is dragged onto a circular parent object
-function isCardOverParent(card: Card, group: Group): boolean {
-  const bounds = cardVisualBounds(card);
-  const gx = group.x + group.width / 2;
-  const gy = group.y + group.height / 2;
-  const gr = group.width / 2;
-  const closestX = Math.max(bounds.x, Math.min(gx, bounds.x + bounds.width));
-  const closestY = Math.max(bounds.y, Math.min(gy, bounds.y + bounds.height));
-  return Math.hypot(closestX - gx, closestY - gy) <= gr + 30;
-}
 
 export function useCardDrag() {
   const [snapLines, setSnapLines] = useState<SnapLine[]>([]);
@@ -35,7 +23,7 @@ export function useCardDrag() {
     activeDragGroupIdRef.current = group.id;
     initialPositionsRef.current.clear();
     initialPositionsRef.current.set(group.id, { x: group.x, y: group.y });
-    const linked = getParentLinkage(allCards, group.id);
+    const linked = getParentLinkage(allCards, group.id, allGroups);
     linkedCardIdsRef.current = linked.cardIds;
     linkedBundleIdsRef.current = linked.bundleIds;
     allCards
@@ -79,21 +67,7 @@ export function useCardDrag() {
       }
       setSnapLines(lines);
 
-      // Check Ctrl-drag hover target for Circular Parent Object
-      if (isCtrlPressed && selectedIds.size > 0 && groups.length > 0) {
-        const firstId = Array.from(selectedIds)[0];
-        const initialPos = initialPositionsRef.current.get(firstId);
-        const cardObj = allCards.find((c) => c.id === firstId);
-        if (initialPos && cardObj) {
-          const movedCard = { ...cardObj, x: initialPos.x + dx, y: initialPos.y + dy };
-          const hoveredGroup = groups.find((g) => g.kind !== 'bundle' &&
-            isCardOverParent(movedCard, g)
-          );
-          setDragOverGroupId(hoveredGroup ? hoveredGroup.id : null);
-        }
-      } else {
-        setDragOverGroupId(null);
-      }
+      setDragOverGroupId(null);
 
       setCards((prev) =>
         prev.map((c) => {
@@ -173,45 +147,7 @@ export function useCardDrag() {
       initialPositionsRef.current.clear();
       setDragOverGroupId(null);
 
-      // ONLY when dragging with Ctrl key do we link/unlink cards from Parent Objects
-      if (!isCtrlPressed || selectedIds.size === 0) {
-        return { nextCards: cards };
-      }
-
-      const selectedCards = cards.filter((c) => selectedIds.has(c.id));
-      if (selectedCards.length === 0) return { nextCards: cards };
-
-      const firstCard = selectedCards[0];
-      const targetGroup = groups.find((g) => g.kind !== 'bundle' && isCardOverParent(firstCard, g)) || null;
-      const targetGroupId = targetGroup ? targetGroup.id : null;
-
-      let attachedCount = 0;
-      let detachedCount = 0;
-
-      const nextCards = cards.map((c) => {
-        if (!selectedIds.has(c.id)) return c;
-        if (targetGroupId) {
-          if (c.groupId !== targetGroupId) {
-            attachedCount++;
-            return { ...c, groupId: targetGroupId };
-          }
-        } else {
-          if (c.groupId) {
-            detachedCount++;
-            return { ...c, groupId: null };
-          }
-        }
-        return c;
-      });
-
-      let toastMessage: string | undefined;
-      if (targetGroup && attachedCount > 0) {
-        toastMessage = `已将 ${attachedCount} 项链接到「${targetGroup.title}」`;
-      } else if (detachedCount > 0) {
-        toastMessage = `已断开 ${detachedCount} 项与父物体的链接`;
-      }
-
-      return { nextCards, toastMessage };
+      return { nextCards: cards };
     },
     []
   );

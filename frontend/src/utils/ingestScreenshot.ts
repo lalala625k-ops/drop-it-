@@ -1,4 +1,5 @@
 import { Card } from '../types';
+import { removePendingImage, storePendingImage } from './pendingImages';
 
 interface ImageActions {
   createCard: (data: Partial<Card>) => Card;
@@ -23,22 +24,41 @@ const imageSize = (src: string) => new Promise<{ width: number; height: number }
 });
 
 export async function ingestScreenshot(file: File, actions: ImageActions) {
+  let dataUrl: string;
+  let size: { width: number; height: number };
   try {
-    const dataUrl = await readImage(file);
-    const size = await imageSize(dataUrl);
-    const width = Math.min(size.width, 360);
-    const height = width * size.height / size.width;
-    const card = actions.createCard({ type: 'image', image: dataUrl, width, height,
-      x: actions.position.x - width / 2, y: actions.position.y - height / 2 });
-    fetch('/api/upload-asset', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image: dataUrl }),
-    }).then((response) => response.json()).then((asset) => {
-      if (asset.success && asset.url && actions.getCard(card.id)?.type === 'image') {
-        actions.updateCard(card.id, { image: asset.url });
-      }
-    }).catch(() => {});
+    dataUrl = await readImage(file);
+    size = await imageSize(dataUrl);
   } catch {
     actions.showToast('图片读取失败');
+    return;
+  }
+
+  const id = `card-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  const backedUp = await storePendingImage(id, dataUrl);
+  const width = Math.min(size.width, 360);
+  const height = width * size.height / size.width;
+  actions.createCard({ id, type: 'image', image: dataUrl, width, height,
+    x: actions.position.x - width / 2, y: actions.position.y - height / 2 });
+
+  try {
+    const response = await fetch('/api/upload-asset', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: dataUrl }),
+    });
+    if (!response.ok) throw new Error('图片上传失败');
+    const asset = await response.json();
+    if (!asset.success || typeof asset.url !== 'string' || !asset.url.startsWith('/api/assets/')) {
+      throw new Error('图片上传失败');
+    }
+    const current = actions.getCard(id);
+    if (!current || current.type === 'image') {
+      actions.updateCard(id, { image: asset.url });
+      window.setTimeout(() => { void removePendingImage(id); }, 2000);
+    } else {
+      void removePendingImage(id);
+    }
+  } catch {
+    actions.showToast(backedUp ? '图片已暂存本地，后端未连接' : '图片已显示，但暂存失败；请启动后端');
   }
 }

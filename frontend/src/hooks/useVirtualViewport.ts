@@ -10,6 +10,8 @@ interface UseVirtualViewportProps {
   groups: Group[];
   selectedCardIds: Set<string>;
   selectedGroupIds: Set<string>;
+  highlightedCardIds?: Set<string>;
+  highlightedGroupIds?: Set<string>;
   bufferPx?: number;
 }
 
@@ -19,6 +21,8 @@ export function useVirtualViewport({
   groups,
   selectedCardIds,
   selectedGroupIds,
+  highlightedCardIds,
+  highlightedGroupIds,
   bufferPx = 300,
 }: UseVirtualViewportProps) {
   return useMemo(() => {
@@ -50,7 +54,7 @@ export function useVirtualViewport({
       const c = cards[i];
       const bounds = cardVisualBounds(c);
       // Always include selected cards so dragging never vanishes
-      const isSelected = selectedCardIds.has(c.id);
+      const isSelected = selectedCardIds.has(c.id) || !!highlightedCardIds?.has(c.id);
       const isVisible =
         isSelected ||
         (bounds.x + bounds.width >= minX &&
@@ -69,7 +73,7 @@ export function useVirtualViewport({
       const g = groups[i];
       const gWidth = g.kind === 'bundle' && g.collapsed ? bundleCollapsedWidth(g.width) : (g.width || 120);
       const gHeight = g.kind === 'bundle' && g.collapsed ? bundleCollapsedHeight(cards.filter((card) => card.bundleId === g.id).length) : (g.height || 120);
-      const isSelected = selectedGroupIds.has(g.id);
+      const isSelected = selectedGroupIds.has(g.id) || !!highlightedGroupIds?.has(g.id);
       const isVisible =
         isSelected ||
         (g.x + gWidth >= minX &&
@@ -96,6 +100,8 @@ export function useVirtualViewport({
     groups,
     selectedCardIds,
     selectedGroupIds,
+    highlightedCardIds,
+    highlightedGroupIds,
     bufferPx,
   ]);
 }

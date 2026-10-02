@@ -3,7 +3,8 @@ import { Card, Group, Viewport } from '../types';
 import { bundleCollapsedHeight, bundleCollapsedWidth, bundleOutlinePoints } from '../hooks/useBundleGroups';
 import { cardVisualBounds } from '../utils/cardBounds';
 import { clamp, MIN_CANVAS_ZOOM } from '../utils/canvas';
-import { GROUP_COLOR_FAMILIES, groupBaseColor } from '../utils/groupColors';
+import { getBundleParentIds, treeParentId } from '../utils/groupRelations';
+import { treeNodeCenter } from '../utils/treeTargets';
 
 interface MinimapNavProps {
   expanded: boolean;
@@ -14,6 +15,7 @@ interface MinimapNavProps {
 }
 
 const PADDING = 12;
+const UNCOLORED = '#1d1d1d';
 
 export const MinimapNav: React.FC<MinimapNavProps> = ({
   expanded,
@@ -26,16 +28,26 @@ export const MinimapNav: React.FC<MinimapNavProps> = ({
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
   const [dragRect, setDragRect] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
   const [windowSize, setWindowSize] = useState(() => ({ width: window.innerWidth, height: window.innerHeight }));
-  const groupColors = useMemo(() => {
-    const parentColors = new Map(groups.filter((group) => group.kind !== 'bundle')
-      .map((group, index) => [group.id, group.color || groupBaseColor(GROUP_COLOR_FAMILIES[index % 6].hue)]));
-    const bundleColors = new Map(groups.filter((group) => group.kind === 'bundle').map((bundle, index) => {
-      const linked = cards.find((card) => card.bundleId === bundle.id && card.groupId && parentColors.has(card.groupId));
-      return [bundle.id, (linked?.groupId && parentColors.get(linked.groupId)) || bundle.color ||
-        groupBaseColor(GROUP_COLOR_FAMILIES[index % 6].hue)] as const;
-    }));
-    return { parentColors, bundleColors };
-  }, [cards, groups]);
+  const bundleIds = useMemo(() => new Set(groups.filter((group) => group.kind === 'bundle')
+    .map((group) => group.id)), [groups]);
+  const parentColors = useMemo(() => new Map(groups.filter((group) => group.kind !== 'bundle')
+    .map((group) => [group.id, group.color] as const)), [groups]);
+  const inheritedColors = useMemo(() => {
+    const colors = new Map<string, string>();
+    const resolve = (id: string, visited = new Set<string>()): string => {
+      if (visited.has(id)) return UNCOLORED;
+      if (colors.has(id)) return colors.get(id)!;
+      const direct = parentColors.get(id);
+      if (direct) return direct;
+      visited.add(id);
+      const parentId = treeParentId(id, cards, groups);
+      const color = parentId ? resolve(parentId, visited) : UNCOLORED;
+      colors.set(id, color);
+      return color;
+    };
+    [...cards, ...groups].forEach((node) => resolve(node.id));
+    return colors;
+  }, [cards, groups, parentColors]);
 
   useEffect(() => {
     const updateSize = () => setWindowSize({ width: window.innerWidth, height: window.innerHeight });
@@ -56,6 +68,7 @@ export const MinimapNav: React.FC<MinimapNavProps> = ({
     let bMaxY = vpBottom;
 
     cards.forEach((c) => {
+      if (c.bundleId && bundleIds.has(c.bundleId)) return;
       const bounds = cardVisualBounds(c);
       bMinX = Math.min(bMinX, bounds.x);
       bMaxX = Math.max(bMaxX, bounds.x + bounds.width);
@@ -115,7 +128,7 @@ export const MinimapNav: React.FC<MinimapNavProps> = ({
       mapWidth,
       mapHeight,
     };
-  }, [cards, groups, viewport, expanded, windowSize]);
+  }, [cards, groups, bundleIds, viewport, expanded, windowSize]);
 
   const localPoint = (clientX: number, clientY: number) => {
     const rect = containerRef.current?.getBoundingClientRect();
@@ -187,53 +200,24 @@ export const MinimapNav: React.FC<MinimapNavProps> = ({
 
       {/* SVG Layer for Network Links */}
       <svg className="absolute inset-0 w-full h-full pointer-events-none">
-        {cards.map((c) => {
-          if (!c.groupId || c.bundleId) return null;
-          const parentGroup = groups.find((g) => g.id === c.groupId);
-          if (!parentGroup) return null;
-
-          const gw = parentGroup.width || 120;
-          const gh = parentGroup.height || 120;
-          const gCenterX = offsetX + (parentGroup.x + gw / 2 - minX) * scale;
-          const gCenterY = offsetY + (parentGroup.y + gh / 2 - minY) * scale;
-
-          const cCenterX = offsetX + (c.x + c.width / 2 - minX) * scale;
-          const cCenterY = offsetY + (c.y + c.height / 2 - minY) * scale;
-
-          return (
-            <line
-              key={`link-${c.id}-${parentGroup.id}`}
-              x1={gCenterX}
-              y1={gCenterY}
-              x2={cCenterX}
-              y2={cCenterY}
-              stroke="#a8a7a2"
-              strokeWidth="1"
-              strokeDasharray="2 2"
-            />
-          );
-        })}
-        {groups.filter((g) => g.kind === 'bundle').flatMap((bundle) => {
-          const parentIds = [...new Set(cards.filter((card) => card.bundleId === bundle.id && card.groupId).map((card) => card.groupId!))];
-          return parentIds.map((parentId) => {
-            const parent = groups.find((group) => group.id === parentId);
-            if (!parent) return null;
-            const bw = bundle.collapsed ? bundleCollapsedWidth(bundle.width) : bundle.width;
-            const bh = bundle.collapsed ? bundleCollapsedHeight(cards.filter((card) => card.bundleId === bundle.id).length) : bundle.height;
-            return <line key={`bundle-link-${bundle.id}-${parentId}`}
-              x1={offsetX + (parent.x + parent.width / 2 - minX) * scale}
-              y1={offsetY + (parent.y + parent.height / 2 - minY) * scale}
-              x2={offsetX + (bundle.x + bw / 2 - minX) * scale}
-              y2={offsetY + (bundle.y + bh / 2 - minY) * scale}
-              stroke="#a8a7a2" strokeWidth="1" strokeDasharray="2 2" />;
-          });
+        {[...cards.filter((card) => !card.bundleId || !bundleIds.has(card.bundleId)),
+          ...groups.filter((group) => group.kind === 'bundle')].map((node) => {
+          const parentId = bundleIds.has(node.id) ? getBundleParentIds(cards, node as Group)[0] : (node as Card).groupId;
+          if (!parentId) return null;
+          const parent = treeNodeCenter(parentId, cards, groups);
+          const child = treeNodeCenter(node.id, cards, groups);
+          if (!parent || !child) return null;
+          return <line key={`link-${node.id}-${parentId}`}
+            x1={offsetX + (parent.x - minX) * scale} y1={offsetY + (parent.y - minY) * scale}
+            x2={offsetX + (child.x - minX) * scale} y2={offsetY + (child.y - minY) * scale}
+            stroke="#a8a7a2" strokeWidth="1" strokeDasharray="2 2" />;
         })}
       </svg>
 
-      {/* Colored Group areas sit behind their member cards. */}
+      {/* A Group uses its linked parent's color and hides its member cards. */}
       <svg className="absolute inset-0 w-full h-full pointer-events-none">
         {groups.filter((group) => group.kind === 'bundle').map((group) => {
-          const color = groupColors.bundleColors.get(group.id) || '#a8a7a2';
+          const color = inheritedColors.get(group.id) || UNCOLORED;
           const members = cards.filter((card) => card.bundleId === group.id);
           const points = group.collapsed
             ? [{ x: 0, y: 0 }, { x: bundleCollapsedWidth(group.width), y: 0 },
@@ -241,13 +225,15 @@ export const MinimapNav: React.FC<MinimapNavProps> = ({
               { x: 0, y: bundleCollapsedHeight(members.length) }]
             : bundleOutlinePoints(members, group);
           const path = points.map((point, index) => `${index ? 'L' : 'M'} ${offsetX + (group.x + point.x - minX) * scale} ${offsetY + (group.y + point.y - minY) * scale}`).join(' ') + ' Z';
-          return <path key={group.id} d={path} fill={color} fillOpacity={groupColors.bundleColors.get(group.id) ? 0.55 : 0.12}
+          return <path key={group.id} d={path} fill={color}
             stroke={color} strokeWidth="2" />;
         })}
       </svg>
 
       {/* Cards: Squares & Rectangles */}
       {cards.map((c) => {
+        if (c.bundleId && bundleIds.has(c.bundleId)) return null;
+        const color = inheritedColors.get(c.id) || UNCOLORED;
         const cx = offsetX + (c.x - minX) * scale;
         const cy = offsetY + (c.y - minY) * scale;
         const cw = Math.max(4, c.width * scale);
@@ -256,15 +242,13 @@ export const MinimapNav: React.FC<MinimapNavProps> = ({
         return (
           <div
             key={c.id}
-            className="absolute border border-ink pointer-events-none transition-transform"
+            className="absolute pointer-events-none transition-transform"
             style={{
               left: `${cx}px`,
               top: `${cy}px`,
               width: `${cw}px`,
               height: `${ch}px`,
-              backgroundColor: (c.bundleId && groupColors.bundleColors.get(c.bundleId)) ||
-                (c.groupId && groupColors.parentColors.get(c.groupId)) || c.color || '#ffffff',
-              borderColor: (c.bundleId && groupColors.bundleColors.get(c.bundleId)) || c.borderColor || '#1d1d1d',
+              backgroundColor: color,
             }}
           />
         );
@@ -272,23 +256,23 @@ export const MinimapNav: React.FC<MinimapNavProps> = ({
 
       {/* Circular parent objects */}
       {groups.filter((group) => group.kind !== 'bundle').map((g) => {
+        const color = g.color || UNCOLORED;
         const gw = g.width || 120;
-        const width = Math.max(6, (g.kind === 'bundle' && g.collapsed ? bundleCollapsedWidth(gw) : gw) * scale);
-        const height = Math.max(6, (g.kind === 'bundle' && g.collapsed ? bundleCollapsedHeight(cards.filter((card) => card.bundleId === g.id).length) : (g.height || 120)) * scale);
+        const width = Math.max(6, gw * scale);
         const gx = offsetX + (g.x - minX) * scale;
         const gy = offsetY + (g.y - minY) * scale;
 
         return (
           <div
             key={g.id}
-            className={`absolute border-2 border-ink pointer-events-none ${g.kind === 'bundle' ? '' : 'rounded-full'}`}
+            className="absolute border-2 rounded-full pointer-events-none"
             style={{
               left: `${gx}px`,
               top: `${gy}px`,
               width: `${width}px`,
-              height: `${g.kind === 'bundle' ? height : width}px`,
-              backgroundColor: g.color || '#ffffff',
-              borderColor: g.color || '#1d1d1d',
+              height: `${width}px`,
+              backgroundColor: color,
+              borderColor: color,
             }}
           />
         );

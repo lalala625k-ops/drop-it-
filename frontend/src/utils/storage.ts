@@ -1,4 +1,6 @@
 import { Card, Group } from '../types';
+import { normalizeTreeData } from './groupRelations';
+import { restorePendingImages } from './pendingImages';
 
 export const STORAGE_KEY = 'pinboard_cards_v1';
 
@@ -53,13 +55,22 @@ export const INITIAL_GUIDE_CARDS: Card[] = [
 ];
 
 let debounceTimer: number | null = null;
-let pendingState: { cards: Card[]; groups: Group[] } | null = null;
+let pendingState: { cards: Card[]; groups: Group[]; revision: number } | null = null;
+let lastRevision = 0;
+let syncQueue: Promise<void> = Promise.resolve();
+
+interface StoredData {
+  cards: Card[];
+  groups: Group[];
+  revision?: number;
+  pendingSync?: boolean;
+}
 
 function withoutParsingState(cards: Card[]): Card[] {
   return cards.map(({ isParsing: _isParsing, ...card }) => card);
 }
 
-export function getLocalData(): { cards: Card[]; groups: Group[] } | null {
+export function getLocalData(): StoredData | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
@@ -70,6 +81,8 @@ export function getLocalData(): { cards: Card[]; groups: Group[] } | null {
     return {
       cards: Array.isArray(parsed.cards) ? withoutParsingState(parsed.cards) : [],
       groups: Array.isArray(parsed.groups) ? parsed.groups : [],
+      revision: typeof parsed.revision === 'number' ? parsed.revision : undefined,
+      pendingSync: parsed.pendingSync === true,
     };
   } catch (e) {
     console.error('Failed to read localStorage:', e);
@@ -77,10 +90,11 @@ export function getLocalData(): { cards: Card[]; groups: Group[] } | null {
   }
 }
 
-export function writeLocalData(cards: Card[], groups: Group[]) {
+export function writeLocalData(cards: Card[], groups: Group[], revision?: number, pendingSync = false) {
   const persistedCards = withoutParsingState(cards);
+  const data = { cards: persistedCards, groups, revision, pendingSync };
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ cards: persistedCards, groups }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   } catch (e) {
     try {
       // Strip large Base64 images for LocalStorage backup only so metadata is never lost
@@ -90,27 +104,39 @@ export function writeLocalData(cards: Card[], groups: Group[]) {
         }
         return c;
       });
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ cards: slimCards, groups }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...data, cards: slimCards }));
     } catch {
-      console.warn('LocalStorage quota exceeded, data safe in backend and memory.');
+      console.warn('LocalStorage quota exceeded; local backup could not be updated.');
     }
   }
 }
 
-export async function syncToBackend(cards: Card[], groups: Group[]) {
-  try {
-    await fetch('/api/cards', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cards: withoutParsingState(cards), groups }),
-    });
-  } catch (e) {
-    // 静默降级，不阻塞前端
-  }
+export function syncToBackend(cards: Card[], groups: Group[], revision?: number) {
+  // Keep full-state writes in order; an older response must not overwrite a newer edit.
+  syncQueue = syncQueue.then(async () => {
+    try {
+      const response = await fetch('/api/cards', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cards: withoutParsingState(cards), groups }),
+      });
+      if (!response.ok) return;
+      const local = getLocalData();
+      if (local?.pendingSync && local.revision === revision) {
+        writeLocalData(local.cards, local.groups, revision, false);
+      }
+    } catch {
+      // Keep the local pending flag so the next load retries this state.
+    }
+  });
+  return syncQueue;
 }
 
 export function saveStateDebounced(cards: Card[], groups: Group[], delay = 400) {
-  pendingState = { cards, groups };
+  const revision = Math.max(Date.now(), lastRevision + 1);
+  lastRevision = revision;
+  pendingState = { cards, groups, revision };
+  writeLocalData(cards, groups, revision, true);
 
   if (debounceTimer) {
     clearTimeout(debounceTimer);
@@ -118,8 +144,7 @@ export function saveStateDebounced(cards: Card[], groups: Group[], delay = 400) 
 
   debounceTimer = window.setTimeout(() => {
     if (pendingState) {
-      writeLocalData(pendingState.cards, pendingState.groups);
-      syncToBackend(pendingState.cards, pendingState.groups);
+      syncToBackend(pendingState.cards, pendingState.groups, pendingState.revision);
       pendingState = null;
     }
     debounceTimer = null;
@@ -128,7 +153,6 @@ export function saveStateDebounced(cards: Card[], groups: Group[], delay = 400) 
 
 export function flushStoredCards() {
   if (pendingState) {
-    writeLocalData(pendingState.cards, pendingState.groups);
     // Send beacon or synchronous/fast fetch on unload if possible
     try {
       const blob = new Blob([JSON.stringify({ cards: withoutParsingState(pendingState.cards), groups: pendingState.groups })], { type: 'application/json' });
@@ -141,15 +165,32 @@ export function flushStoredCards() {
 }
 
 export async function loadInitialData(): Promise<{ cards: Card[]; groups: Group[] }> {
-  // 1. 优先尝试向后端发起 GET /api/cards
+  const local = getLocalData();
+  if (local?.pendingSync) {
+    lastRevision = Math.max(lastRevision, local.revision || 0);
+    const cards = await restorePendingImages(local.cards);
+    if (cards.some((card, index) => card.image !== local.cards[index].image)) {
+      writeLocalData(cards, local.groups, local.revision, true);
+    }
+    void syncToBackend(cards, local.groups, local.revision);
+    return { cards, groups: local.groups };
+  }
+
+  // No unsynced local edits: load the server's current state.
   try {
     const res = await fetch('/api/cards');
     if (res.ok) {
       const data = await res.json();
-      const cards = withoutParsingState(Array.isArray(data.cards) ? data.cards : (Array.isArray(data) ? data : []));
+      const serverCards = withoutParsingState(Array.isArray(data.cards) ? data.cards : (Array.isArray(data) ? data : []));
+      const cards = await restorePendingImages(serverCards);
       const groups = Array.isArray(data.groups) ? data.groups : [];
       if (cards.length > 0 || groups.length > 0) {
-        writeLocalData(cards, groups);
+        if (cards.some((card, index) => card.image !== serverCards[index].image)) {
+          const revision = Math.max(Date.now(), lastRevision + 1);
+          lastRevision = revision;
+          writeLocalData(cards, groups, revision, true);
+          void syncToBackend(cards, groups, revision);
+        } else writeLocalData(cards, groups);
         return { cards, groups };
       }
     }
@@ -158,9 +199,8 @@ export async function loadInitialData(): Promise<{ cards: Card[]; groups: Group[
   }
 
   // 2. 降级读取 LocalStorage
-  const local = getLocalData();
   if (local && (local.cards.length > 0 || local.groups.length > 0)) {
-    return local;
+    return { cards: await restorePendingImages(local.cards), groups: local.groups };
   }
 
   // 3. 两者均为空时，加载初始内置引导卡片
@@ -197,7 +237,8 @@ export function importBackupFromFile(file: File): Promise<{ cards: Card[]; group
           cards = Array.isArray(parsed.cards) ? withoutParsingState(parsed.cards) : [];
           groups = Array.isArray(parsed.groups) ? parsed.groups : [];
         }
-        resolve({ cards, groups });
+        const tree = normalizeTreeData(cards, groups);
+        resolve({ cards: tree.cards, groups: tree.groups });
       } catch (err) {
         reject(err);
       }

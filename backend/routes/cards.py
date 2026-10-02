@@ -25,6 +25,8 @@ class CardModel(BaseModel):
     reminder: Optional[str] = None
     tags: Optional[List[str]] = None
     sizeLocked: Optional[bool] = None
+    defaultWidth: Optional[float] = None
+    defaultHeight: Optional[float] = None
     contentScale: Optional[float] = None
     color: Optional[str] = None
     textColor: Optional[str] = None
@@ -40,6 +42,7 @@ class GroupModel(BaseModel):
     color: Optional[str] = None
     zIndex: Optional[int] = 0
     kind: Optional[str] = None
+    parentIds: Optional[List[str]] = None
     collapsed: Optional[bool] = False
     outlinePadding: Optional[float] = None
     tags: Optional[List[str]] = None

@@ -4,6 +4,7 @@ import { parseMarkdownHeading } from '../../utils/headingUtils';
 
 interface FloatingHeaderTitleProps {
   card: Card;
+  contentScale: number;
   isSelected: boolean;
   onSelect: (e: React.MouseEvent) => void;
   onUpdate: (id: string, updates: Partial<Card>) => void;
@@ -11,6 +12,7 @@ interface FloatingHeaderTitleProps {
 
 export const FloatingHeaderTitle: React.FC<FloatingHeaderTitleProps> = ({
   card,
+  contentScale,
   isSelected,
   onSelect,
   onUpdate,
@@ -79,7 +81,7 @@ export const FloatingHeaderTitle: React.FC<FloatingHeaderTitleProps> = ({
       className={`absolute bottom-full left-0 w-full pointer-events-auto select-none z-10 flex flex-col justify-end ${
         (isEditing ? isEditingLevel2 : isLevel2) ? 'mb-1' : 'mb-1.5'
       }`}
-      style={{ width: `${card.width / (card.contentScale ?? 1)}px` }}
+      style={{ width: `${card.width / contentScale}px` }}
     >
       {isEditing ? (
         <input

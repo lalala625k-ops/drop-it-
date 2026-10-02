@@ -3,10 +3,10 @@ import { Card, Group } from '../types';
 import { saveStateDebounced } from '../utils/storage';
 import { recognizeCardImage, ImageRecognitionMode } from '../utils/recognizeCardImage';
 import { bundleBounds } from './useBundleGroups';
+import { isFeishuUrl, FEISHU_LOGO_URLS } from '../utils/feishu';
 
 export interface ActivePieMenuState {
-  card: Card;
-  groupId?: string;
+  target: { kind: 'card'; card: Card } | { kind: 'bundle' | 'parent'; group: Group };
   center: { x: number; y: number };
   pointer: { x: number; y: number };
   isRightMouseDown: boolean;
@@ -35,19 +35,17 @@ export function usePieMenuState({
 
   const openPieMenu = useCallback((card: Card, clientX: number, clientY: number) => {
     setActivePieMenu({
-      card,
+      target: { kind: 'card', card },
       center: { x: clientX, y: clientY },
       pointer: { x: clientX, y: clientY },
       isRightMouseDown: true,
     });
   }, []);
 
-  const openGroupPieMenu = useCallback((group: Group, clientX: number, clientY: number) => {
-    const menuCard: Card = { id: group.id, type: 'text', x: group.x, y: group.y,
-      width: group.width, height: group.height, zIndex: group.zIndex || 1,
-      title: group.title, headerTitle: group.title, reminder: group.reminder, tags: group.tags };
-    setActivePieMenu({ card: menuCard, groupId: group.id,
-      center: { x: clientX, y: clientY }, pointer: { x: clientX, y: clientY }, isRightMouseDown: false });
+  const openGroupPieMenu = useCallback((group: Group, clientX: number, clientY: number,
+    isRightMouseDown = false) => {
+    setActivePieMenu({ target: { kind: group.kind === 'bundle' ? 'bundle' : 'parent', group },
+      center: { x: clientX, y: clientY }, pointer: { x: clientX, y: clientY }, isRightMouseDown });
   }, []);
 
   const updatePieMenuPointer = useCallback((clientX: number, clientY: number) => {
@@ -66,7 +64,7 @@ export function usePieMenuState({
 
   const handleConfirmPieDate = useCallback(
     (cardId: string, dateStr: string | null) => {
-      if (activePieMenu?.groupId === cardId) {
+      if (activePieMenu?.target.kind !== 'card' && activePieMenu?.target.group.id === cardId) {
         pushHistory(cardsRef.current, groupsRef.current);
         const next = groupsRef.current.map((g) => g.id === cardId ? { ...g, reminder: dateStr } : g);
         setGroups(next); saveStateDebounced(cardsRef.current, next);
@@ -87,7 +85,7 @@ export function usePieMenuState({
 
   const handleConfirmPieTitle = useCallback(
     (cardId: string, title: string | null) => {
-      if (activePieMenu?.groupId === cardId) {
+      if (activePieMenu?.target.kind !== 'card' && activePieMenu?.target.group.id === cardId) {
         pushHistory(cardsRef.current, groupsRef.current);
         const next = groupsRef.current.map((g) => g.id === cardId ? { ...g, title: title?.trim() || '' } : g);
         setGroups(next); saveStateDebounced(cardsRef.current, next);
@@ -117,7 +115,7 @@ export function usePieMenuState({
       const cleanTag = tag.trim();
       if (!cleanTag) return;
 
-      if (activePieMenu?.groupId === cardId) {
+      if (activePieMenu?.target.kind !== 'card' && activePieMenu?.target.group.id === cardId) {
         pushHistory(cardsRef.current, groupsRef.current);
         const next = groupsRef.current.map((g) => {
           if (g.id !== cardId) return g;
@@ -125,7 +123,9 @@ export function usePieMenuState({
           return { ...g, tags: tags.includes(cleanTag) ? tags.filter((t) => t !== cleanTag) : [...tags, cleanTag] };
         });
         setGroups(next); saveStateDebounced(cardsRef.current, next);
-        setActivePieMenu((menu) => menu ? { ...menu, card: { ...menu.card, tags: next.find((g) => g.id === cardId)?.tags } } : null);
+        setActivePieMenu((menu) => menu?.target.kind === 'bundle'
+          ? { ...menu, target: { ...menu.target, group: { ...menu.target.group,
+            tags: next.find((g) => g.id === cardId)?.tags } } } : menu);
         return;
       }
 
@@ -153,7 +153,7 @@ export function usePieMenuState({
 
   const handleGroupColor = useCallback((groupId: string, color: string) => {
     const group = groupsRef.current.find((item) => item.id === groupId);
-    if (!group || group.color === color) { setActivePieMenu(null); return; }
+    if (!group || group.kind === 'bundle' || group.color === color) { setActivePieMenu(null); return; }
     pushHistory(cardsRef.current, groupsRef.current);
     const next = groupsRef.current.map((item) => item.id === groupId ? { ...item, color } : item);
     setGroups(next);
@@ -177,7 +177,8 @@ export function usePieMenuState({
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const metadata = await response.json();
       const title = typeof metadata.title === 'string' && metadata.title.trim() !== card.url ? metadata.title.trim() : '';
-      const imageUrl = typeof metadata.image === 'string' ? metadata.image.trim() : '';
+      const feishu = isFeishuUrl(card.url);
+      const imageUrl = !feishu && typeof metadata.image === 'string' ? metadata.image.trim() : '';
       if (!title && !imageUrl) throw new Error('未取得标题或头图');
 
       let image = imageUrl;
@@ -205,7 +206,9 @@ export function usePieMenuState({
           title: title || c.title,
           image,
           description: typeof metadata.description === 'string' ? metadata.description : c.description,
-          favicon: typeof metadata.favicon === 'string' ? metadata.favicon : c.favicon,
+          favicon: feishu ? FEISHU_LOGO_URLS[0]
+            : typeof metadata.favicon === 'string' ? metadata.favicon : c.favicon,
+          height: feishu && !c.sizeLocked ? 90 : c.height,
           isParsing: false,
         } : c);
         saveStateDebounced(next, groupsRef.current);
@@ -243,7 +246,12 @@ export function usePieMenuState({
         return;
       }
       pushHistory(cardsRef.current.map((item) => item.id === cardId ? { ...item, isParsing: false } : item), groupsRef.current);
-      const nextCards = cardsRef.current.map((item) => item.id === cardId ? { ...item, ...result.updates } : item);
+      const nextCards = cardsRef.current.map((item) => item.id === cardId ? {
+        ...item, ...result.updates,
+        defaultWidth: result.updates.width ?? item.width,
+        defaultHeight: result.updates.height ?? item.height,
+        sizeLocked: false,
+      } : item);
       const nextGroups = groupsRef.current.map((group) => group.kind === 'bundle'
         ? bundleBounds(nextCards, group.id, group) : group);
       setCards(nextCards);

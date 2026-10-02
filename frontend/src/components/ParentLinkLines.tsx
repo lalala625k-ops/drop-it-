@@ -1,29 +1,7 @@
 import React from 'react';
 import { Card, Group } from '../types';
-import { bundleCollapsedHeight, bundleCollapsedWidth, bundleOutlinePoints } from '../hooks/useBundleGroups';
-
-type Point = { x: number; y: number };
-
-function boundaryPoint(from: Point, to: Point, outline: Point[]): Point {
-  const ray = { x: to.x - from.x, y: to.y - from.y };
-  let nearest = Infinity;
-  let result = to;
-  for (let i = 0; i < outline.length; i++) {
-    const edgeStart = outline[i];
-    const edgeEnd = outline[(i + 1) % outline.length];
-    const edge = { x: edgeEnd.x - edgeStart.x, y: edgeEnd.y - edgeStart.y };
-    const denominator = ray.x * edge.y - ray.y * edge.x;
-    if (Math.abs(denominator) < 1e-8) continue;
-    const offset = { x: edgeStart.x - from.x, y: edgeStart.y - from.y };
-    const t = (offset.x * edge.y - offset.y * edge.x) / denominator;
-    const u = (offset.x * ray.y - offset.y * ray.x) / denominator;
-    if (t >= 0 && t <= 1 && u >= 0 && u <= 1 && t < nearest) {
-      nearest = t;
-      result = { x: from.x + t * ray.x, y: from.y + t * ray.y };
-    }
-  }
-  return result;
-}
+import { getBundleParentIds, treeParentId } from '../utils/groupRelations';
+import { linkEndpoints } from '../utils/linkEndpoints';
 
 function bundleLinkProgress(memberCount: number): number {
   return Math.min(Math.max(memberCount - 1, 0), 9) / 9;
@@ -75,60 +53,38 @@ export const ParentLinkLines: React.FC<ParentLinkLinesProps> = ({
     bundleMemberCount?: number;
   }[] = [];
 
-  groups.forEach((group) => {
-    if (group.kind === 'bundle') return;
-    const gSize = group.width || 120;
-    const gx = group.x + gSize / 2;
-    const gy = group.y + gSize / 2;
-    const isGroupSelected = selectedGroupIds.has(group.id);
-    const isGroupDragOver = dragOverGroupId === group.id;
-
-    const bundleIds = new Set(cards.filter((card) => card.groupId === group.id && card.bundleId).map((card) => card.bundleId!));
-    bundleIds.forEach((bundleId) => {
-      const bundle = groups.find((item) => item.id === bundleId && item.kind === 'bundle');
-      if (!bundle) return;
-      const members = cards.filter((card) => card.bundleId === bundleId);
-      const collapsedWidth = bundleCollapsedWidth(bundle.width);
-      const cx = bundle.x + (bundle.collapsed ? collapsedWidth : bundle.width) / 2;
-      const collapsedHeight = bundleCollapsedHeight(members.length);
-      const cy = bundle.y + (bundle.collapsed ? collapsedHeight : bundle.height) / 2;
-      const localOutline = bundle.collapsed
-        ? [{ x: 0, y: 0 }, { x: collapsedWidth, y: 0 }, { x: collapsedWidth, y: collapsedHeight }, { x: 0, y: collapsedHeight }]
-        : bundleOutlinePoints(members, bundle);
-      const edge = boundaryPoint({ x: gx, y: gy }, { x: cx, y: cy },
-        localOutline.map((point) => ({ x: point.x + bundle.x, y: point.y + bundle.y })));
-      const highlighted = isGroupSelected || selectedGroupIds.has(bundleId);
-      links.push({ groupId: group.id, groupTitle: group.title, gx, gy, cx: edge.x, cy: edge.y,
-        isSelected: highlighted, isHighlighted: highlighted || isGroupDragOver,
-        bundleMemberCount: members.length });
-    });
-
-    cards
-      .filter((card) => {
-        if (card.groupId !== group.id || card.bundleId) return false;
-        // Optimization: if visibleCardIdSet provided, skip line if card is offscreen (unless highlighted)
-        if (visibleCardIdSet && !visibleCardIdSet.has(card.id) && !isGroupSelected && !selectedCardIds.has(card.id)) {
-          return false;
-        }
-        return true;
-      })
-      .forEach((card) => {
-        const cx = card.x + card.width / 2;
-        const cy = card.y + card.height / 2;
-        const isCardSelected = selectedCardIds.has(card.id);
-
-        links.push({
-          groupId: group.id,
-          groupTitle: group.title,
-          gx,
-          gy,
-          cx,
-          cy,
-          isSelected: isGroupSelected || isCardSelected,
-          isHighlighted: isGroupDragOver || isGroupSelected || isCardSelected,
-        });
-      });
-  });
+  const bundleIds = new Set(groups.filter((group) => group.kind === 'bundle').map((group) => group.id));
+  const selectedBranch = (id: string) => {
+    const seen = new Set<string>();
+    let current: string | null = id;
+    while (current && !seen.has(current)) {
+      if (selectedCardIds.has(current) || selectedGroupIds.has(current)) return true;
+      seen.add(current);
+      current = treeParentId(current, cards, groups);
+    }
+    return false;
+  };
+  const addLink = (childId: string, parentId: string, bundle?: Group) => {
+    const endpoints = linkEndpoints(parentId, childId, cards, groups);
+    if (!endpoints) return;
+    if (!bundle && visibleCardIdSet && !visibleCardIdSet.has(childId)
+      && !selectedCardIds.has(childId) && !selectedCardIds.has(parentId)
+      && !selectedGroupIds.has(parentId)) return;
+    const members = bundle ? cards.filter((card) => card.bundleId === bundle.id) : [];
+    const selected = selectedBranch(childId);
+    links.push({ groupId: parentId, groupTitle: '', gx: endpoints.start.x, gy: endpoints.start.y,
+      cx: endpoints.end.x, cy: endpoints.end.y, isSelected: selected,
+      isHighlighted: selected || dragOverGroupId === parentId || dragOverGroupId === childId,
+      bundleMemberCount: bundle ? members.length : undefined });
+  };
+  for (const bundle of groups.filter((group) => group.kind === 'bundle')) {
+    const parentId = getBundleParentIds(cards, bundle)[0];
+    if (parentId) addLink(bundle.id, parentId, bundle);
+  }
+  for (const card of cards) {
+    if (card.bundleId && bundleIds.has(card.bundleId)) continue;
+    if (card.groupId) addLink(card.id, card.groupId);
+  }
 
   if (links.length === 0 && !interactiveWire) return null;
 

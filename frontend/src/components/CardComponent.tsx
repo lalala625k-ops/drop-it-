@@ -4,6 +4,7 @@ import { FloatingHeaderTitle } from './card/FloatingHeaderTitle';
 import { CardResizeHandles, ResizeHandleDirection } from './card/CardResizeHandles';
 import { CardHeaderBadges } from './card/CardHeaderBadges';
 import { CardBodyContent } from './card/CardBodyContent';
+import { isFeishuUrl } from '../utils/feishu';
 
 export type { ResizeHandleDirection };
 
@@ -11,31 +12,38 @@ interface CardComponentProps {
   card: Card;
   isSelected: boolean;
   showSelectionControls: boolean;
+  parentHighlighted?: boolean;
   onSelect: (e: React.MouseEvent) => void;
   onUpdate: (id: string, updates: Partial<Card>) => void;
+  onTextEdit: (id: string, updates: Partial<Card>) => void;
+  onTextEditStart: () => void;
   onDoubleClick: (card: Card) => void;
   onStartScale: (card: Card, startClientX: number, startWidth: number, startHeight: number) => void;
   onStartResize: (card: Card, handle: ResizeHandleDirection, e: React.MouseEvent) => void;
   zoom: number;
+  contentScale: number;
 }
 
 const CardComponentInner: React.FC<CardComponentProps> = ({
   card,
   isSelected,
   showSelectionControls,
+  parentHighlighted = false,
   onSelect,
   onUpdate,
+  onTextEdit,
+  onTextEditStart,
   onDoubleClick,
   onStartScale,
   onStartResize,
   zoom,
+  contentScale,
 }) => {
   const [hoverTimeout, setHoverTimeout] = useState<number | null>(null);
   const [showTooltip, setShowTooltip] = useState(false);
   const pointerDownPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const wasSelectedAtPointerDownRef = useRef(false);
   const isTinyThumbnail = !!card.bundleId && Math.min(card.width, card.height) * zoom <= 20;
-  const contentScale = card.contentScale ?? 1;
 
   const handleMouseDown = (e: React.MouseEvent) => {
     pointerDownPosRef.current = { x: e.clientX, y: e.clientY };
@@ -54,6 +62,8 @@ const CardComponentInner: React.FC<CardComponentProps> = ({
       onStartScale(card, e.clientX, card.width, card.height);
       return;
     }
+
+    if ((e.ctrlKey || e.metaKey) && e.button === 0) e.preventDefault();
 
     if (e.button === 0) {
       onSelect(e);
@@ -97,10 +107,16 @@ const CardComponentInner: React.FC<CardComponentProps> = ({
         width: `${card.width}px`,
         height: `${card.height}px`,
         zIndex: card.zIndex,
+        outline: parentHighlighted ? '3px solid #1d1d1d' : undefined,
+        outlineOffset: parentHighlighted ? '2px' : undefined,
       }}
       onMouseDown={handleMouseDown}
       onDoubleClick={(e) => {
         e.stopPropagation();
+        if (card.type === 'text') {
+          (e.currentTarget.querySelector('[data-text-editor]') as HTMLTextAreaElement | null)?.focus();
+          return;
+        }
         onDoubleClick(card);
       }}
       onMouseEnter={handleMouseEnter}
@@ -108,7 +124,7 @@ const CardComponentInner: React.FC<CardComponentProps> = ({
     >
       {isTinyThumbnail ? (
         <div className="h-full w-full overflow-hidden bg-paper pointer-events-none">
-          {card.image && card.type !== 'text' ? (
+          {card.image && card.type !== 'text' && !isFeishuUrl(card.url) ? (
             <img src={card.image} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" draggable={false} />
           ) : (
             <div className="flex h-full w-full flex-col justify-center gap-[2px] p-[2px]">
@@ -122,15 +138,16 @@ const CardComponentInner: React.FC<CardComponentProps> = ({
         <div className="absolute left-0 top-0"
           style={{ width: card.width / contentScale, height: card.height / contentScale,
             transform: `scale(${contentScale})`, transformOrigin: 'top left' }}>
-          <FloatingHeaderTitle card={card} isSelected={isSelected} onSelect={onSelect} onUpdate={onUpdate} />
+          <FloatingHeaderTitle card={card} contentScale={contentScale} isSelected={isSelected} onSelect={onSelect} onUpdate={onUpdate} />
           <CardBodyContent card={card} isSelected={isSelected} onUpdate={onUpdate}
-            onWebLinkClick={handleWebLinkClick} />
+            onTextEdit={onTextEdit} onTextEditStart={onTextEditStart}
+            onWebLinkClick={handleWebLinkClick} contentScale={contentScale} />
           {card.isParsing && (card.type === 'web' || card.type === 'image') && (
             <div role="status" aria-live="polite"
               className="absolute inset-0 z-40 flex flex-col items-center justify-center gap-2 bg-paper/90 text-ink pointer-events-none">
               <div aria-hidden="true" className="w-8 h-8 rounded-full border-2 border-ash border-t-ink animate-spin" />
               <span className="text-[11px] font-bold tracking-[0.05em] text-center px-2">
-                {card.type === 'web' ? '标题和头图解析中…' : '图片文字识别中…'}
+                {card.type === 'web' ? isFeishuUrl(card.url) ? '标题解析中…' : '标题和头图解析中…' : '图片文字识别中…'}
               </span>
             </div>
           )}

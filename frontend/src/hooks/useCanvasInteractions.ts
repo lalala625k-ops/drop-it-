@@ -4,7 +4,9 @@ import { InteractiveWire } from '../components/ParentLinkLines';
 import { clamp, screenToWorld, MIN_CANVAS_ZOOM } from '../utils/canvas';
 import { saveStateDebounced } from '../utils/storage';
 import { addDraggedCardsToBundles } from './useBundleGroups';
-import { getParentLinkage } from '../utils/groupRelations';
+import { canAttachTreeNode, getParentLinkage, treeParentId } from '../utils/groupRelations';
+import { findTreeTarget } from '../utils/treeTargets';
+import { linkEndpoints, linkStartTowardPoint } from '../utils/linkEndpoints';
 
 export type DragMode =
   | 'pan'
@@ -57,6 +59,7 @@ interface UseCanvasInteractionsProps {
   pushHistory: (cards: Card[], groups: Group[]) => void;
   showToast: (msg: string) => void;
   onOpenPieMenu: (card: Card, clientX: number, clientY: number) => void;
+  onOpenGroupPieMenu: (group: Group, clientX: number, clientY: number, rightMouseDown: boolean) => void;
   onUpdatePieMenuPointer: (clientX: number, clientY: number) => void;
   onReleasePieMenuMouseDown: (clientX: number, clientY: number) => void;
 }
@@ -99,6 +102,7 @@ export function useCanvasInteractions({
   pushHistory,
   showToast,
   onOpenPieMenu,
+  onOpenGroupPieMenu,
   onUpdatePieMenuPointer,
   onReleasePieMenuMouseDown,
 }: UseCanvasInteractionsProps) {
@@ -110,6 +114,8 @@ export function useCanvasInteractions({
   const draggingGroupIdRef = useRef<string | null>(null);
   const draggingGroupIdsRef = useRef<Set<string>>(new Set());
   const draggingSelectedCardIdsRef = useRef<Set<string>>(new Set());
+  const draggingCardBranchIdsRef = useRef<Set<string>>(new Set());
+  const draggingCardBranchBundleIdsRef = useRef<Set<string>>(new Set());
   const groupDragShiftRef = useRef(false);
   const groupDragWasSelectedRef = useRef(false);
   const hasGroupDraggedRef = useRef(false);
@@ -117,6 +123,9 @@ export function useCanvasInteractions({
   const dragStartCardsRef = useRef<Card[]>([]);
   const dragStartGroupsRef = useRef<Group[]>([]);
   const connectingCardIdRef = useRef<string | null>(null);
+  const connectingBundleIdRef = useRef<string | null>(null);
+  const isolatedDragRef = useRef(false);
+  const connectStartRef = useRef<{ x: number; y: number } | null>(null);
   const dragOverGroupIdRef = useRef<string | null>(null);
   const clickedCardInfoRef = useRef<{ id: string; wasAlreadySelected: boolean; shiftKey: boolean } | null>(null);
   const zoomFrameRef = useRef<number | null>(null);
@@ -142,15 +151,18 @@ export function useCanvasInteractions({
 
     const target = e.target as HTMLElement;
     const cardEl = target.closest('[data-card-id]') as HTMLElement | null;
+    const groupEl = target.closest('[data-group-id], [data-bundle-id]') as HTMLElement | null;
 
-    if (isRight && cardEl) {
+    if (isRight && (cardEl || groupEl)) {
       e.preventDefault();
       e.stopPropagation();
-      const cardId = cardEl.getAttribute('data-card-id')!;
-      const targetCard = cardsRef.current.find((c) => c.id === cardId);
-      if (targetCard) {
+      const targetCard = cardEl && cardsRef.current.find((c) => c.id === cardEl.getAttribute('data-card-id'));
+      const targetGroup = groupEl && groupsRef.current.find((g) =>
+        g.id === (groupEl.getAttribute('data-group-id') || groupEl.getAttribute('data-bundle-id')));
+      if (targetCard || targetGroup) {
         dragModeRef.current = 'pie-menu';
-        onOpenPieMenu(targetCard, e.clientX, e.clientY);
+        if (targetCard) onOpenPieMenu(targetCard, e.clientX, e.clientY);
+        else if (targetGroup) onOpenGroupPieMenu(targetGroup, e.clientX, e.clientY, true);
       }
       return;
     }
@@ -181,13 +193,14 @@ export function useCanvasInteractions({
     }
 
     if (isLeft) {
-      if (cardEl || target.closest('[data-group-id]')) return;
+      if (cardEl || groupEl) return;
       dragModeRef.current = 'select';
       beginMarqueeSelection(e.shiftKey);
       if (!e.shiftKey) clearSelection();
       setSelectionRect({ x: world.x, y: world.y, width: 0, height: 0 });
     }
-  }, [beginMarqueeSelection, clearSelection, isAltPressedRef, isSpacePressedRef, onOpenPieMenu, cardsRef, setSelectionRect, viewportRef]);
+  }, [beginMarqueeSelection, clearSelection, isAltPressedRef, isSpacePressedRef,
+    onOpenPieMenu, onOpenGroupPieMenu, cardsRef, groupsRef, setSelectionRect, viewportRef]);
 
   useEffect(() => {
     const applyZoom = (clientX: number, clientY: number) => {
@@ -248,27 +261,22 @@ export function useCanvasInteractions({
 
       if (mode === 'connect-card') {
         const currentWorld = screenToWorld(e.clientX, e.clientY, vp);
-        const sourceId = connectingCardIdRef.current;
-        const sourceCard = cardsRef.current.find((c) => c.id === sourceId);
-        if (sourceCard) {
-          const hoveredGroup = groupsRef.current.find((g) => {
-            if (g.kind === 'bundle') return false;
-            const gSize = g.width || 120;
-            const gx = g.x + gSize / 2;
-            const gy = g.y + gSize / 2;
-            return Math.hypot(currentWorld.x - gx, currentWorld.y - gy) <= gSize / 2 + 30;
-          });
-          const targetGId = hoveredGroup ? hoveredGroup.id : null;
-          dragOverGroupIdRef.current = targetGId;
-          setDragOverGroupId(targetGId);
-
-          setInteractiveWire({
-            startX: sourceCard.x + sourceCard.width / 2,
-            startY: sourceCard.y + sourceCard.height / 2,
-            targetX: hoveredGroup ? hoveredGroup.x + (hoveredGroup.width || 120) / 2 : currentWorld.x,
-            targetY: hoveredGroup ? hoveredGroup.y + (hoveredGroup.height || 120) / 2 : currentWorld.y,
-            sourceCardId: sourceCard.id,
-            isSnapping: !!hoveredGroup,
+        const sourceId = connectingBundleIdRef.current || connectingCardIdRef.current;
+        if (sourceId) {
+          const target = findTreeTarget(currentWorld, sourceId, cardsRef.current, groupsRef.current);
+          const validTarget = target && canAttachTreeNode(sourceId, target.id, cardsRef.current, groupsRef.current);
+          dragOverGroupIdRef.current = target?.id || null;
+          setDragOverGroupId(validTarget ? target.id : null);
+          const endpoints = validTarget
+            ? linkEndpoints(sourceId, target.id, cardsRef.current, groupsRef.current) : null;
+          const start = endpoints?.start || linkStartTowardPoint(sourceId, currentWorld,
+            cardsRef.current, groupsRef.current);
+          if (start) setInteractiveWire({
+            startX: start.x, startY: start.y,
+            targetX: endpoints?.end.x ?? currentWorld.x,
+            targetY: endpoints?.end.y ?? currentWorld.y,
+            sourceCardId: sourceId,
+            isSnapping: !!validTarget,
           });
         }
         return;
@@ -279,36 +287,61 @@ export function useCanvasInteractions({
           hasCardDraggedRef.current = true;
         }
         const snap = isShiftPressedRef.current && isSpacePressedRef.current;
-        updateCardPositions(deltaX, deltaY, selectedCardIdsRef.current, cardsRef.current, snap, setCards, groupsRef.current, e.ctrlKey);
+        updateCardPositions(deltaX, deltaY, draggingCardBranchIdsRef.current, cardsRef.current,
+          snap, setCards, groupsRef.current, isolatedDragRef.current);
+        if (draggingCardBranchBundleIdsRef.current.size) {
+          const starts = new Map(dragStartGroupsRef.current.map((group) => [group.id, group]));
+          setGroups((previous) => previous.map((group) => {
+            const start = starts.get(group.id);
+            return start && draggingCardBranchBundleIdsRef.current.has(group.id)
+              ? { ...group, x: start.x + deltaX, y: start.y + deltaY } : group;
+          }));
+        }
       } else if (mode === 'drag-group') {
-        const groupIds = draggingGroupIdsRef.current;
-        if (groupIds.size) {
+          const groupIds = draggingGroupIdsRef.current;
+          if (groupIds.size) {
           if (Math.hypot(e.clientX - dragStartRef.current.screenX, e.clientY - dragStartRef.current.screenY) > 3) {
             hasGroupDraggedRef.current = true;
           }
-          const cardIds = new Set(draggingSelectedCardIdsRef.current);
-          const movedGroupIds = new Set(groupIds);
+          const draggedParentId = draggingGroupIdRef.current;
+          const onlyObject = isolatedDragRef.current;
+          const cardIds = onlyObject ? new Set<string>() : new Set(draggingSelectedCardIdsRef.current);
+          const movedGroupIds = onlyObject ? new Set<string>([draggedParentId!]) : new Set(groupIds);
+          const linkedCardIds = new Set(draggingSelectedCardIdsRef.current);
+          const linkedBundleIds = new Set(groupIds);
           for (const group of dragStartGroupsRef.current) {
             if (!groupIds.has(group.id)) continue;
             if (group.kind === 'bundle') {
-              dragStartCardsRef.current.filter((card) => card.bundleId === group.id).forEach((card) => cardIds.add(card.id));
-            } else if (e.ctrlKey || e.metaKey) {
-              const linked = getParentLinkage(dragStartCardsRef.current, group.id);
-              linked.cardIds.forEach((id) => cardIds.add(id));
-              linked.bundleIds.forEach((id) => movedGroupIds.add(id));
+              dragStartCardsRef.current.filter((card) => card.bundleId === group.id).forEach((card) => {
+                linkedCardIds.add(card.id);
+                cardIds.add(card.id);
+              });
+              const linked = getParentLinkage(dragStartCardsRef.current, group.id, dragStartGroupsRef.current);
+              linked.cardIds.forEach((id) => linkedCardIds.add(id));
+              linked.bundleIds.forEach((id) => linkedBundleIds.add(id));
+            } else {
+              const linked = getParentLinkage(dragStartCardsRef.current, group.id, dragStartGroupsRef.current);
+              linked.cardIds.forEach((id) => linkedCardIds.add(id));
+              linked.bundleIds.forEach((id) => linkedBundleIds.add(id));
             }
+          }
+          if (!onlyObject) {
+            linkedCardIds.forEach((id) => cardIds.add(id));
+            linkedBundleIds.forEach((id) => movedGroupIds.add(id));
           }
           const starts = new Map(dragStartGroupsRef.current.map((group) => [group.id, group]));
           setGroups((previous) => previous.map((group) => {
             const start = starts.get(group.id);
-            return start && movedGroupIds.has(group.id)
-              ? { ...group, x: start.x + deltaX, y: start.y + deltaY } : group;
+            if (!start || (!movedGroupIds.has(group.id) && !linkedBundleIds.has(group.id))) return group;
+            const offset = movedGroupIds.has(group.id) ? 1 : 0;
+            return { ...group, x: start.x + deltaX * offset, y: start.y + deltaY * offset };
           }));
           const cardStarts = new Map(dragStartCardsRef.current.map((card) => [card.id, card]));
           setCards((previous) => previous.map((card) => {
             const start = cardStarts.get(card.id);
-            return start && cardIds.has(card.id)
-              ? { ...card, x: start.x + deltaX, y: start.y + deltaY } : card;
+            if (!start || (!cardIds.has(card.id) && !linkedCardIds.has(card.id))) return card;
+            const offset = cardIds.has(card.id) ? 1 : 0;
+            return { ...card, x: start.x + deltaX * offset, y: start.y + deltaY * offset };
           }));
         }
       } else if (mode === 'scale-card') {
@@ -337,42 +370,50 @@ export function useCanvasInteractions({
       }
 
       if (mode === 'connect-card') {
+        const started = connectStartRef.current;
+        connectStartRef.current = null;
         const sourceId = connectingCardIdRef.current;
-        const targetGId = dragOverGroupIdRef.current;
+        const bundleId = connectingBundleIdRef.current;
+        const activeSourceId = bundleId || sourceId;
+        const target = activeSourceId ? findTreeTarget(screenToWorld(e.clientX, e.clientY, viewportRef.current),
+          activeSourceId, cardsRef.current, groupsRef.current) : null;
         connectingCardIdRef.current = null;
+        connectingBundleIdRef.current = null;
         dragOverGroupIdRef.current = null;
         setInteractiveWire(null);
         setDragOverGroupId(null);
-
-        if (sourceId) {
-          if (targetGId) {
-            pushHistory(cardsRef.current, groupsRef.current);
-            const targetGroup = groupsRef.current.find((g) => g.id === targetGId);
-            const nextCards = cardsRef.current.map((c) =>
-              c.id === sourceId ? { ...c, groupId: targetGId } : c
-            );
-            commitState(nextCards, groupsRef.current);
-            showToast(`已生成实心白线并链接到「${targetGroup?.title || '父物体'}」`);
+        if (!activeSourceId) return;
+        const currentParentId = treeParentId(activeSourceId, cardsRef.current, groupsRef.current);
+        if (started && Math.hypot(e.clientX - started.x, e.clientY - started.y) < 6) {
+          if (!currentParentId) return;
+          pushHistory(cardsRef.current, groupsRef.current);
+          if (bundleId) {
+            commitState(cardsRef.current, groupsRef.current.map((group) => group.id === bundleId
+              ? { ...group, parentIds: [] } : group));
           } else {
-            const targetCard = cardsRef.current.find((c) => c.id === sourceId);
-            const bundleParentIds = targetCard?.bundleId
-              ? [...new Set(cardsRef.current
-                .filter((card) => card.bundleId === targetCard.bundleId && card.groupId)
-                .map((card) => card.groupId!))]
-              : [];
-            const parentId = targetCard?.groupId || (bundleParentIds.length === 1 ? bundleParentIds[0] : null);
-            if (targetCard && parentId) {
-              pushHistory(cardsRef.current, groupsRef.current);
-              const nextCards = cardsRef.current.map((c) =>
-                (targetCard.bundleId
-                  ? c.bundleId === targetCard.bundleId && c.groupId === parentId
-                  : c.id === sourceId) ? { ...c, groupId: null } : c
-              );
-              commitState(nextCards, groupsRef.current);
-              showToast(targetCard.bundleId ? '已断开整个 Group 与该父物体的连线' : '已断开卡片连线');
-            }
+            commitState(cardsRef.current.map((card) => card.id === sourceId
+              ? { ...card, groupId: null } : card), groupsRef.current);
           }
+          showToast('已断开上级连接');
+          return;
         }
+        if (target && !canAttachTreeNode(activeSourceId, target.id, cardsRef.current, groupsRef.current)) {
+          showToast('不能连接到自己的下级，树状结构不允许形成环');
+          return;
+        }
+        const targetId = target?.id || null;
+        if (targetId === currentParentId || (!targetId && !currentParentId)) return;
+        pushHistory(cardsRef.current, groupsRef.current);
+        if (bundleId) {
+          const nextGroups = groupsRef.current.map((group) => group.id === bundleId
+            ? { ...group, parentIds: targetId ? [targetId] : [] } : group);
+          commitState(cardsRef.current, nextGroups);
+        } else {
+          const nextCards = cardsRef.current.map((card) => card.id === sourceId
+            ? { ...card, groupId: targetId } : card);
+          commitState(nextCards, groupsRef.current);
+        }
+        showToast(targetId ? '已连接树状分支' : '已断开分支连线');
         return;
       }
 
@@ -380,6 +421,8 @@ export function useCanvasInteractions({
         onReleasePieMenuMouseDown(e.clientX, e.clientY);
       }
       if (mode === 'drag-card') {
+        const isolated = isolatedDragRef.current;
+        isolatedDragRef.current = false;
         const info = clickedCardInfoRef.current;
         const didDrag = hasCardDraggedRef.current;
         if (!didDrag && info && info.wasAlreadySelected && !info.shiftKey) {
@@ -392,10 +435,10 @@ export function useCanvasInteractions({
           cardsRef.current,
           groupsRef.current,
           selectedCardIdsRef.current,
-          e.ctrlKey
+          isolated
         );
         let nextGroups = groupsRef.current;
-        if (didDrag && !e.ctrlKey) {
+        if (didDrag && !isolated) {
           const result = addDraggedCardsToBundles(nextCards, nextGroups, selectedCardIdsRef.current,
             dragStartCardsRef.current, dragStartGroupsRef.current);
           nextCards = result.nextCards;
@@ -404,9 +447,12 @@ export function useCanvasInteractions({
         }
         dragStartCardsRef.current = [];
         dragStartGroupsRef.current = [];
+        draggingCardBranchIdsRef.current.clear();
+        draggingCardBranchBundleIdsRef.current.clear();
         commitState(nextCards, nextGroups);
         if (toastMessage) showToast(toastMessage);
       } else if (mode === 'drag-group') {
+        isolatedDragRef.current = false;
         const gId = draggingGroupIdRef.current;
         draggingGroupIdRef.current = null;
         draggingGroupIdsRef.current = new Set();
@@ -483,21 +529,27 @@ export function useCanvasInteractions({
 
   const handleStartCardDrag = useCallback(
     (card: Card, e: React.MouseEvent) => {
-      if (e.ctrlKey && !e.altKey) {
+      if (e.ctrlKey && e.shiftKey && !e.altKey) {
         dragModeRef.current = 'connect-card';
-        connectingCardIdRef.current = card.id;
+        connectStartRef.current = { x: e.clientX, y: e.clientY };
+        const sourceId = card.bundleId && groupsRef.current.some((group) => group.id === card.bundleId && group.kind === 'bundle')
+          ? card.bundleId : card.id;
+        if (sourceId === card.id) connectingCardIdRef.current = card.id;
+        else connectingBundleIdRef.current = sourceId;
         const currentWorld = screenToWorld(e.clientX, e.clientY, viewportRef.current);
+        const source = linkStartTowardPoint(sourceId, currentWorld, cardsRef.current, groupsRef.current);
         setInteractiveWire({
-          startX: card.x + card.width / 2,
-          startY: card.y + card.height / 2,
+          startX: source?.x ?? card.x + card.width / 2,
+          startY: source?.y ?? card.y + card.height / 2,
           targetX: currentWorld.x,
           targetY: currentWorld.y,
-          sourceCardId: card.id,
+          sourceCardId: sourceId,
         });
         return;
       }
 
       dragModeRef.current = 'drag-card';
+      isolatedDragRef.current = (e.ctrlKey || e.metaKey) && !e.altKey;
       hasCardDraggedRef.current = false;
       dragStartCardsRef.current = cardsRef.current;
       dragStartGroupsRef.current = groupsRef.current;
@@ -507,7 +559,10 @@ export function useCanvasInteractions({
       clickedCardInfoRef.current = { id: card.id, wasAlreadySelected, shiftKey: e.shiftKey };
 
       let nextIds: Set<string>;
-      if (e.shiftKey) {
+      if (isolatedDragRef.current) {
+        nextIds = new Set([card.id]);
+        selectCard(card.id, false);
+      } else if (e.shiftKey) {
         nextIds = new Set(selectedCardIdsRef.current);
         nextIds.add(card.id);
         selectCard(card.id, true);
@@ -517,7 +572,16 @@ export function useCanvasInteractions({
         nextIds = new Set([card.id]);
         selectCard(card.id, false);
       }
-      initDragCards(cardsRef.current.filter((c) => nextIds.has(c.id)));
+      const branchCardIds = new Set(nextIds);
+      const branchBundleIds = new Set<string>();
+      if (!isolatedDragRef.current) nextIds.forEach((id) => {
+        const linked = getParentLinkage(cardsRef.current, id, groupsRef.current);
+        linked.cardIds.forEach((childId) => branchCardIds.add(childId));
+        linked.bundleIds.forEach((bundleId) => branchBundleIds.add(bundleId));
+      });
+      draggingCardBranchIdsRef.current = branchCardIds;
+      draggingCardBranchBundleIdsRef.current = branchBundleIds;
+      initDragCards(cardsRef.current.filter((c) => branchCardIds.has(c.id)));
     },
     [cardsRef, groupsRef, initDragCards, pushHistory, selectCard, selectedCardIdsRef, viewportRef]
   );
@@ -526,6 +590,21 @@ export function useCanvasInteractions({
     (group: Group, e: React.MouseEvent) => {
       if (e.button !== 0) return;
       e.stopPropagation();
+      if (group.kind === 'bundle' && e.ctrlKey && e.shiftKey && !e.altKey) {
+        dragModeRef.current = 'connect-card';
+        connectStartRef.current = { x: e.clientX, y: e.clientY };
+        connectingBundleIdRef.current = group.id;
+        const currentWorld = screenToWorld(e.clientX, e.clientY, viewportRef.current);
+        const source = linkStartTowardPoint(group.id, currentWorld, cardsRef.current, groupsRef.current);
+        setInteractiveWire({
+          startX: source?.x ?? group.x + group.width / 2,
+          startY: source?.y ?? group.y + group.height / 2,
+          targetX: currentWorld.x,
+          targetY: currentWorld.y,
+          sourceCardId: group.id,
+        });
+        return;
+      }
       const vp = viewportRef.current;
       dragStartRef.current = {
         screenX: e.clientX,
@@ -537,13 +616,14 @@ export function useCanvasInteractions({
         worldY: (e.clientY - vp.y) / vp.zoom,
       };
       dragModeRef.current = 'drag-group';
+      isolatedDragRef.current = (e.ctrlKey || e.metaKey) && !e.altKey;
       draggingGroupIdRef.current = group.id;
       groupDragShiftRef.current = e.shiftKey;
       groupDragWasSelectedRef.current = selectedGroupIdsRef.current.has(group.id);
-      draggingGroupIdsRef.current = new Set(e.shiftKey || groupDragWasSelectedRef.current
+      draggingGroupIdsRef.current = new Set(!isolatedDragRef.current && (e.shiftKey || groupDragWasSelectedRef.current)
         ? selectedGroupIdsRef.current : []);
       draggingGroupIdsRef.current.add(group.id);
-      draggingSelectedCardIdsRef.current = new Set(e.shiftKey || groupDragWasSelectedRef.current
+      draggingSelectedCardIdsRef.current = new Set(!isolatedDragRef.current && (e.shiftKey || groupDragWasSelectedRef.current)
         ? selectedCardIdsRef.current : []);
       hasGroupDraggedRef.current = false;
       dragStartCardsRef.current = cardsRef.current;

@@ -1,0 +1,88 @@
+import { Card, Group } from '../types';
+import { bundleBounds, bundleCollapsedHeight, bundleCollapsedWidth } from '../hooks/useBundleGroups';
+import { getParentLinkage } from './groupRelations';
+
+export interface CanvasClipboardSnapshot {
+  cards: Card[];
+  groups: Group[];
+}
+
+export function collectClipboardSnapshot(
+  cards: Card[], groups: Group[], selectedCardIds: Set<string>, selectedGroupIds: Set<string>
+): CanvasClipboardSnapshot {
+  const cardIds = new Set(selectedCardIds);
+  const groupIds = new Set(selectedGroupIds);
+  for (const cardId of selectedCardIds) {
+    const linked = getParentLinkage(cards, cardId, groups);
+    linked.cardIds.forEach((id) => cardIds.add(id));
+    linked.bundleIds.forEach((id) => groupIds.add(id));
+  }
+  for (const group of groups) {
+    if (!groupIds.has(group.id)) continue;
+    if (group.kind === 'bundle') {
+      cards.filter((card) => card.bundleId === group.id).forEach((card) => cardIds.add(card.id));
+      const linked = getParentLinkage(cards, group.id, groups);
+      linked.cardIds.forEach((id) => cardIds.add(id));
+      linked.bundleIds.forEach((id) => groupIds.add(id));
+    } else {
+      const linked = getParentLinkage(cards, group.id, groups);
+      linked.cardIds.forEach((id) => cardIds.add(id));
+      linked.bundleIds.forEach((id) => groupIds.add(id));
+    }
+  }
+  const selectedCards = cards.filter((card) => cardIds.has(card.id)).map((card) => ({ ...card }));
+  const selectedGroups = groups.filter((group) => groupIds.has(group.id)).map((group) =>
+    group.kind === 'bundle' && !group.collapsed ? bundleBounds(cards, group.id, group) : { ...group }
+  );
+  return { cards: selectedCards, groups: selectedGroups };
+}
+
+export function clipboardBounds(snapshot: CanvasClipboardSnapshot) {
+  const collapsedBundles = new Set(snapshot.groups.filter((group) => group.kind === 'bundle' && group.collapsed)
+    .map((group) => group.id));
+  const boxes = [
+    ...snapshot.cards.filter((card) => !card.bundleId || !collapsedBundles.has(card.bundleId))
+      .map((card) => ({ x: card.x, y: card.y, width: card.width, height: card.height })),
+    ...snapshot.groups.map((group) => ({
+      x: group.x, y: group.y,
+      width: group.kind === 'bundle' && group.collapsed ? bundleCollapsedWidth(group.width) : group.width,
+      height: group.kind === 'bundle' && group.collapsed
+        ? bundleCollapsedHeight(snapshot.cards.filter((card) => card.bundleId === group.id).length)
+        : group.height,
+    })),
+  ];
+  if (!boxes.length) return null;
+  const minX = Math.min(...boxes.map((box) => box.x));
+  const minY = Math.min(...boxes.map((box) => box.y));
+  const maxX = Math.max(...boxes.map((box) => box.x + box.width));
+  const maxY = Math.max(...boxes.map((box) => box.y + box.height));
+  return { x: minX, y: minY, width: Math.max(1, maxX - minX), height: Math.max(1, maxY - minY),
+    centerX: (minX + maxX) / 2, centerY: (minY + maxY) / 2 };
+}
+
+export function cloneClipboardSnapshot(
+  snapshot: CanvasClipboardSnapshot, target: { x: number; y: number }, existingGroups: Group[],
+  nextZIndex: () => number
+): CanvasClipboardSnapshot {
+  const bounds = clipboardBounds(snapshot);
+  if (!bounds) return { cards: [], groups: [] };
+  const offsetX = target.x - bounds.centerX;
+  const offsetY = target.y - bounds.centerY;
+  const newId = (prefix: string) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  const groupIds = new Map(snapshot.groups.map((group) => [group.id, newId('group')]));
+  const cardIds = new Map(snapshot.cards.map((card) => [card.id, newId('card')]));
+  const validParents = new Set(existingGroups.filter((group) => group.kind !== 'bundle').map((group) => group.id));
+  const remapParent = (id: string) => groupIds.get(id) || cardIds.get(id) || (validParents.has(id) ? id : null);
+  const groups = snapshot.groups.map((group) => ({
+    ...group, id: groupIds.get(group.id)!,
+    parentIds: group.parentIds?.slice(0, 1).map(remapParent).filter((id): id is string => !!id),
+    x: Math.round(group.x + offsetX), y: Math.round(group.y + offsetY), zIndex: nextZIndex(),
+  }));
+  const cards = snapshot.cards.map((card) => ({
+    ...card, id: cardIds.get(card.id)!, x: Math.round(card.x + offsetX), y: Math.round(card.y + offsetY),
+    zIndex: nextZIndex(),
+    groupId: card.groupId ? remapParent(card.groupId) : null,
+    bundleId: card.bundleId ? groupIds.get(card.bundleId) ?? null : null,
+  }));
+  return { cards, groups };
+}
