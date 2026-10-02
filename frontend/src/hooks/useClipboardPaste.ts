@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import { Card } from '../types';
+import { ingestScreenshot } from '../utils/ingestScreenshot';
 
 interface UseClipboardPasteProps {
   createCardAtCursor: (cardData: Partial<Card>) => Card;
@@ -7,6 +8,8 @@ interface UseClipboardPasteProps {
   showToast?: (msg: string) => void;
   pasteCopiedCards?: (cards: Card[]) => void;
   getCopiedCards?: () => Card[];
+  getWorldPosition: () => { x: number; y: number };
+  getCardById: (id: string) => Card | undefined;
 }
 
 export function useClipboardPaste({
@@ -15,6 +18,8 @@ export function useClipboardPaste({
   showToast,
   pasteCopiedCards,
   getCopiedCards,
+  getWorldPosition,
+  getCardById,
 }: UseClipboardPasteProps) {
   const handlePaste = useCallback(
     async (e: ClipboardEvent) => {
@@ -58,55 +63,13 @@ export function useClipboardPaste({
       if (imageItem) {
         const file = imageItem.getAsFile();
         if (file) {
-          const reader = new FileReader();
-          reader.onload = async (event) => {
-            const base64Data = event.target?.result as string;
-            const img = new Image();
-            img.src = base64Data;
-            img.onload = async () => {
-              const maxInitWidth = 360;
-              const ratio = img.naturalWidth / img.naturalHeight;
-              const cardW = Math.min(img.naturalWidth, maxInitWidth);
-              const cardH = cardW / ratio;
-
-              const created = createCardAtCursor({
-                type: 'image',
-                image: base64Data,
-                width: cardW,
-                height: cardH,
-                title: '',
-                content: '',
-                isParsing: true,
-              });
-
-              // PRD 1.2: RapidOCR background extraction
-              try {
-                const res = await fetch('/api/recognize-image', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ image: base64Data }),
-                });
-                if (res.ok) {
-                  const ocr = await res.json();
-                  if (ocr.success) {
-                    updateCard(created.id, {
-                      title: ocr.title || '',
-                      content: ocr.text || '',
-                      isParsing: false,
-                    });
-                  } else {
-                    updateCard(created.id, { isParsing: false });
-                  }
-                } else {
-                  updateCard(created.id, { isParsing: false });
-                }
-              } catch (err) {
-                console.warn('OCR request skipped or failed:', err);
-                updateCard(created.id, { isParsing: false });
-              }
-            };
-          };
-          reader.readAsDataURL(file);
+          await ingestScreenshot(file, {
+            createCard: createCardAtCursor,
+            updateCard,
+            getCard: getCardById,
+            showToast: (message) => showToast?.(message),
+            position: { ...getWorldPosition() },
+          });
           return;
         }
       }
@@ -165,13 +128,18 @@ export function useClipboardPaste({
         });
 
         try {
-          const res = await fetch(`/api/fetch-metadata?url=${encodeURIComponent(targetUrl)}`);
+          const res = await fetch(`/api/fetch-metadata?url=${encodeURIComponent(targetUrl)}`, {
+            signal: AbortSignal.timeout(30000),
+          });
           if (res.ok) {
             const meta = await res.json();
-            const finalTitle = targetTitle && targetTitle !== targetUrl ? targetTitle : meta.title || initialTitle;
+            const clipboardTitle = targetTitle && targetTitle !== targetUrl ? targetTitle : '';
+            const parsedTitle = typeof meta.title === 'string' && meta.title.trim() !== targetUrl ? meta.title.trim() : '';
+            const finalTitle = parsedTitle || clipboardTitle || initialTitle;
 
             if (meta.image) {
               const img = new Image();
+              img.referrerPolicy = 'no-referrer';
               let isHandled = false;
               const finishWithImage = () => {
                 if (isHandled) return;
@@ -189,9 +157,7 @@ export function useClipboardPaste({
                   isParsing: false,
                 });
               };
-
-              img.onload = finishWithImage;
-              img.onerror = () => {
+              const finishWithoutImage = () => {
                 if (isHandled) return;
                 isHandled = true;
                 updateCard(created.id, {
@@ -202,15 +168,14 @@ export function useClipboardPaste({
                   height: 90,
                   isParsing: false,
                 });
+                showToast?.('头图加载失败');
               };
+              img.onload = finishWithImage;
+              img.onerror = finishWithoutImage;
               img.src = meta.image;
 
-              // Safety timeout: if image download hangs, finalize cleanly
-              setTimeout(() => {
-                if (!isHandled) {
-                  finishWithImage();
-                }
-              }, 6000);
+              // A stalled image request should end as a failed load, not as a successful preview.
+              setTimeout(finishWithoutImage, 10000);
             } else {
               updateCard(created.id, {
                 title: finalTitle,
@@ -220,13 +185,16 @@ export function useClipboardPaste({
                 height: 90,
                 isParsing: false,
               });
+              showToast?.('页面未提供头图');
             }
           } else {
             updateCard(created.id, { isParsing: false, height: 90 });
+            showToast?.('链接解析失败');
           }
         } catch (err) {
           console.warn('Metadata fetch failed:', err);
           updateCard(created.id, { isParsing: false, height: 90 });
+          showToast?.('链接解析失败');
         }
       } else if (text) {
         createCardAtCursor({
@@ -237,7 +205,7 @@ export function useClipboardPaste({
         });
       }
     },
-    [createCardAtCursor, updateCard, pasteCopiedCards, getCopiedCards]
+    [createCardAtCursor, updateCard, pasteCopiedCards, getCopiedCards, getWorldPosition, getCardById, showToast]
   );
 
   return { handlePaste };

@@ -1,9 +1,9 @@
 # ==============================================================================
 # SCRAPER REGISTRY & DISPATCHER
 # Priority:
-#   1. 🔒 PROTECTED_SCRAPERS (Verified & locked rules)
-#   2. ⏳ EXPERIMENTAL_SCRAPERS (Incubating rules)
-#   3. 🌐 GenericFallbackScraper (OpenGraph + Headless screenshot)
+#   1. 🔒 PROTECTED_SCRAPERS (verified site exceptions)
+#   2. ⏳ EXPERIMENTAL_SCRAPERS (site exceptions under development)
+#   3. 🌐 GenericFallbackScraper (locked baseline for all other URLs)
 # ==============================================================================
 
 from typing import Dict, List, Optional

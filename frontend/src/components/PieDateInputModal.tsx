@@ -57,32 +57,32 @@ export const PieDateInputModal: React.FC<PieDateInputModalProps> = ({
 
   return (
     <div
-      className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-auto bg-neutral-900/95 border border-white/15 shadow-2xl backdrop-blur-xl text-neutral-100 w-80 p-4 select-none animate-in fade-in zoom-in-95 duration-100 rounded-none"
+      className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-auto bg-paper border border-ash shadow-none text-ink w-80 p-4 select-none animate-in fade-in zoom-in-95 duration-100 rounded-none"
       style={{ left: `${position.x}px`, top: `${position.y}px` }}
       onMouseDown={(e) => e.stopPropagation()}
     >
       {/* Header */}
-      <div className="flex items-center justify-between pb-3 mb-3 border-b border-white/10">
+      <div className="flex items-center justify-between pb-2.5 mb-3 border-b border-ash">
         <div className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-blue-500" />
-          <span className="text-xs font-semibold text-neutral-200 tracking-wide">标记卡片日期</span>
+          <span className="w-2 h-2 rounded-full bg-ink" />
+          <span className="text-[11px] font-bold uppercase tracking-[0.05em] text-ink">标记卡片日期</span>
         </div>
         <button
           type="button"
           onClick={onBackToPie}
-          className="text-[10px] text-neutral-400 hover:text-white px-1.5 py-0.5 rounded-none border border-white/10 hover:border-white/20 transition-colors"
+          className="text-[10px] font-bold uppercase tracking-[0.05em] text-ink/70 hover:text-ink px-2 py-0.5 rounded-[10px] border border-ash hover:border-ink transition-colors"
         >
-          返回饼菜单
+          返回
         </button>
       </div>
 
       {/* Input Box */}
       <div className="space-y-3">
         <div>
-          <div className="flex items-center justify-between text-[11px] text-neutral-400 mb-1.5">
+          <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-[0.05em] text-ink/60 mb-1.5">
             <span>输入年月日 (缺省年默认今年)</span>
             {card.reminder && (
-              <span className="text-neutral-500 font-mono truncate max-w-[120px]" title={card.reminder}>
+              <span className="text-ink/60 font-mono truncate max-w-[120px]" title={card.reminder}>
                 当前: {card.reminder}
               </span>
             )}
@@ -94,37 +94,37 @@ export const PieDateInputModal: React.FC<PieDateInputModalProps> = ({
             onChange={(e) => setDateInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="如: 06/26, 6-26, 0626, 2026/06/26..."
-            className={`w-full bg-neutral-950/90 text-sm px-3 py-2 outline-none font-sans rounded-none transition-colors border ${
+            className={`w-full bg-paper text-ink text-[13px] px-3 py-1.5 outline-none font-retina rounded-[10px] transition-colors border ${
               parseResult.isValid
-                ? 'border-emerald-500 ring-1 ring-emerald-500/50 text-white'
-                : 'border-neutral-700 text-neutral-300 focus:border-neutral-500'
+                ? 'border-2 border-ink'
+                : 'border-ash text-ink focus:border-ink/60'
             }`}
           />
         </div>
 
         {/* Smart Recognition Live Status */}
         <div
-          className={`text-xs px-3 py-2 border transition-all rounded-none ${
+          className={`text-[12px] px-3 py-2 border transition-all rounded-[10px] font-retina ${
             parseResult.isValid
-              ? 'bg-emerald-950/40 border-emerald-500/50 text-emerald-300'
-              : 'bg-neutral-950/60 border-neutral-800 text-neutral-500'
+              ? 'bg-stone/50 border-ink text-ink'
+              : 'bg-stone/20 border-ash text-ink/50'
           }`}
         >
           {parseResult.isValid ? (
-            <div className="flex items-center gap-1.5 font-sans">
-              <svg className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="flex items-center gap-1.5 font-retina">
+              <svg className="w-3.5 h-3.5 text-ink flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
-              <span className="font-medium">识别为: {parseResult.summaryText}</span>
+              <span className="font-bold">识别为: {parseResult.summaryText}</span>
             </div>
           ) : dateInput.trim() ? (
             <div className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-neutral-600 flex-shrink-0" />
-              <span>日期不完整或格式不合法 (保持灰色，无法确认)</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-ash flex-shrink-0" />
+              <span>日期不完整或格式不合法</span>
             </div>
           ) : (
-            <div className="flex items-center gap-1.5 text-neutral-500">
-              <span className="w-1.5 h-1.5 rounded-full bg-neutral-700 flex-shrink-0" />
+            <div className="flex items-center gap-1.5 text-ink/50">
+              <span className="w-1.5 h-1.5 rounded-full bg-ash flex-shrink-0" />
               <span>支持 06/26, 6/26, 0626, 2026-06-26, 今天, 明天...</span>
             </div>
           )}
@@ -137,7 +137,7 @@ export const PieDateInputModal: React.FC<PieDateInputModalProps> = ({
               <button
                 type="button"
                 onClick={onClearDate}
-                className="px-2.5 py-1.5 text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-950/30 border border-rose-900/50 transition-colors rounded-none"
+                className="px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.05em] text-ink/80 hover:text-ink border border-ash hover:border-ink transition-colors rounded-[10px]"
               >
                 清除日期
               </button>
@@ -147,7 +147,7 @@ export const PieDateInputModal: React.FC<PieDateInputModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="px-3 py-1.5 text-xs text-neutral-400 hover:text-white border border-white/10 hover:border-white/20 transition-colors rounded-none"
+              className="px-3 py-1 text-[11px] font-bold uppercase tracking-[0.05em] text-ink/70 hover:text-ink border border-ash hover:border-ink transition-colors rounded-[10px]"
             >
               取消 (ESC)
             </button>
@@ -159,10 +159,10 @@ export const PieDateInputModal: React.FC<PieDateInputModalProps> = ({
                   onConfirm(parseResult.formattedText);
                 }
               }}
-              className={`px-4 py-1.5 text-xs font-medium rounded-none transition-all ${
+              className={`px-3.5 py-1 text-[11px] font-bold uppercase tracking-[0.05em] rounded-[10px] transition-all ${
                 parseResult.isValid
-                  ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-950/50 cursor-pointer'
-                  : 'bg-neutral-800 text-neutral-600 border border-neutral-700/60 cursor-not-allowed'
+                  ? 'bg-ink text-paper border border-ink hover:bg-ink/90 cursor-pointer'
+                  : 'bg-stone/40 text-ink/30 border border-ash cursor-not-allowed'
               }`}
             >
               确认标记 (Enter)

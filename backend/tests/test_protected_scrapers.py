@@ -8,6 +8,7 @@ from backend.services.scrapers.protected.bilibili import BilibiliScraper
 from backend.services.scrapers.protected.instagram import InstagramScraper
 from backend.services.scrapers.protected.youtube import YoutubeScraper
 from backend.services.scrapers.protected.pinterest import PinterestScraper
+from backend.services.scrapers.protected.x_twitter import XTwitterScraper
 from backend.services.scrapers.experimental.feishu import FeishuScraper
 from backend.services.scrapers.registry import scraper_registry
 
@@ -17,6 +18,7 @@ class TestProtectedScrapers(unittest.TestCase):
         self.instagram = InstagramScraper()
         self.youtube = YoutubeScraper()
         self.pinterest = PinterestScraper()
+        self.x_twitter = XTwitterScraper()
         self.feishu = FeishuScraper()
 
     # --- P-001: Bilibili Tests ---
@@ -63,26 +65,27 @@ class TestProtectedScrapers(unittest.TestCase):
         self.assertTrue(self.pinterest.can_handle("https://pin.it/abc1234"))
         self.assertFalse(self.pinterest.can_handle("https://www.youtube.com"))
 
-    # --- E-001: Feishu (Experimental) Tests ---
+    # --- E-001: Feishu Tests ---
     def test_feishu_experimental_status(self):
         self.assertEqual(self.feishu.status, "EXPERIMENTAL")
         self.assertEqual(self.feishu.name, "feishu")
         self.assertTrue(self.feishu.can_handle("https://my.feishu.cn/docx/IXpFdFUD2o6cQ5xxlcYc"))
 
-    # --- E-002: X / Twitter (Experimental) Tests ---
-    def test_x_twitter_experimental_status(self):
-        from backend.services.scrapers.experimental.x_twitter import XTwitterScraper
-        x = XTwitterScraper()
-        self.assertEqual(x.status, "EXPERIMENTAL")
-        self.assertEqual(x.name, "x_twitter")
-        self.assertTrue(x.can_handle("https://x.com/jack/status/20"))
-        self.assertTrue(x.can_handle("https://twitter.com/elonmusk"))
-        self.assertTrue(x.can_handle("https://mobile.twitter.com/i/web/status/123"))
+    # --- P-005: X / Twitter Tests ---
+    def test_x_twitter_lock_status(self):
+        self.assertEqual(self.x_twitter.status, "PROTECTED")
+        self.assertEqual(self.x_twitter.name, "x_twitter")
+
+    def test_x_twitter_can_handle(self):
+        self.assertTrue(self.x_twitter.can_handle("https://x.com/jack/status/20"))
+        self.assertTrue(self.x_twitter.can_handle("https://twitter.com/elonmusk"))
+        self.assertTrue(self.x_twitter.can_handle("https://mobile.twitter.com/i/web/status/123"))
+        self.assertFalse(self.x_twitter.can_handle("https://www.youtube.com"))
 
     # --- Registry Dispatch & Priority Tests ---
     def test_registry_protected_list(self):
         names = [s.name for s in scraper_registry.protected_scrapers]
-        self.assertEqual(names, ["bilibili", "instagram", "youtube", "pinterest"])
+        self.assertEqual(names, ["bilibili", "instagram", "youtube", "pinterest", "x_twitter", "shens_blog"])
 
 if __name__ == "__main__":
     unittest.main()

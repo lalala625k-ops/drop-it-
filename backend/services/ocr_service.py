@@ -23,7 +23,9 @@ def extract_text_from_image(image_bytes: bytes) -> Dict[str, Any]:
         if not result:
             return {"success": True, "title": "", "text": "", "count": 0}
 
-        lines = [item[1] for item in result if len(item) > 1 and item[1]]
+        entries = [item for item in result if len(item) > 1 and item[1]]
+        lines = [item[1] for item in entries]
+        layout = [{"text": item[1], "box": item[0]} for item in entries]
         full_text = "\n".join(lines)
         first_line = lines[0] if lines else ""
 
@@ -32,6 +34,9 @@ def extract_text_from_image(image_bytes: bytes) -> Dict[str, Any]:
             "title": first_line,
             "text": full_text,
             "count": len(lines),
+            "lines": layout,
+            "width": pil_img.width,
+            "height": pil_img.height,
         }
     except Exception as e:
         print(f"OCR error: {e}")

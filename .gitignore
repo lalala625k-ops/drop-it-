@@ -27,3 +27,6 @@ Thumbs.db
 
 # Notes database (tracked and backed up independently in Date-of-my-note repo)
 backend/data/
+
+# Local mobile inbox content
+mobile_sync_sandbox/inbox_data/

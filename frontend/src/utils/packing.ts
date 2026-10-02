@@ -1,4 +1,5 @@
 import { Card } from '../types';
+import { cardHeaderReserve, cardVisualBounds } from './cardBounds';
 
 export function autoPackCards(cardsToPack: Card[], gap = 24): Map<string, { x: number; y: number }> {
   if (cardsToPack.length === 0) return new Map();
@@ -9,9 +10,10 @@ export function autoPackCards(cardsToPack: Card[], gap = 24): Map<string, { x: n
   let totalArea = 0;
 
   for (const c of cardsToPack) {
-    minX = Math.min(minX, c.x);
-    minY = Math.min(minY, c.y);
-    totalArea += (c.width + gap) * (c.height + gap);
+    const bounds = cardVisualBounds(c);
+    minX = Math.min(minX, bounds.x);
+    minY = Math.min(minY, bounds.y);
+    totalArea += (bounds.width + gap) * (bounds.height + gap);
   }
 
   // Calculate target grid width based on sqrt of total area (aspect ratio ~ 1.5:1)
@@ -32,10 +34,11 @@ export function autoPackCards(cardsToPack: Card[], gap = 24): Map<string, { x: n
       rowHeight = 0;
     }
 
-    positions.set(card.id, { x: currentX, y: currentY });
+    const bounds = cardVisualBounds(card);
+    positions.set(card.id, { x: currentX, y: currentY + cardHeaderReserve(card) });
 
     currentX += card.width + gap;
-    rowHeight = Math.max(rowHeight, card.height);
+    rowHeight = Math.max(rowHeight, bounds.height);
   }
 
   return positions;

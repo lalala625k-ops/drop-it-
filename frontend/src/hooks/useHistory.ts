@@ -8,7 +8,7 @@ export function useHistory() {
   const pushHistory = useCallback((cards: Card[], groups: Group[]) => {
     if (isUndoActionRef.current) return;
     historyStackRef.current.push({
-      cards: structuredClone(cards),
+      cards: structuredClone(cards.map(({ isParsing: _isParsing, ...card }) => card)),
       groups: structuredClone(groups),
     });
     if (historyStackRef.current.length > 30) {
@@ -26,7 +26,10 @@ export function useHistory() {
       isUndoActionRef.current = false;
     }, 50);
 
-    return previous;
+    return {
+      ...previous,
+      cards: previous.cards.map(({ isParsing: _isParsing, ...card }) => card),
+    };
   }, []);
 
   return { pushHistory, undo };

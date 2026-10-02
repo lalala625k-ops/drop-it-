@@ -15,13 +15,13 @@ export const SelectionBox: React.FC<SelectionBoxProps> = ({ box }) => {
 
   return (
     <div
-      className="absolute border border-blue-400/80 bg-blue-500/10 pointer-events-none rounded-sm"
+      className="absolute border border-ink/40 bg-stone/20 pointer-events-none rounded-none"
       style={{
         transform: `translate(${left}px, ${top}px)`,
         width: `${width}px`,
         height: `${height}px`,
         borderStyle: 'dashed',
-        borderWidth: '1.5px',
+        borderWidth: '1px',
         zIndex: 9999,
       }}
     />

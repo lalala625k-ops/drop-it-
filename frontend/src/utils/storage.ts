@@ -13,9 +13,9 @@ export const INITIAL_GUIDE_CARDS: Card[] = [
     zIndex: 1,
     content: `💡 随想便签 · 画布操作
 • 鼠标中键/右键 或 Space+左键：漫游画布
-• 鼠标滚轮：以光标为中心 0.2x ~ 3.0x 缩放
+• 鼠标滚轮：以光标为中心缩放画布
 • 双击卡片：居中放大至 80% 视野，再双击还原
-• 双击空白：自适应居中全览所有卡片
+• 左下角地图：单击定位，拖框缩放；按住 M 查看大地图
 • 空白处拖拽：拉出虚线框选（Shift 追加）`,
   },
   {
@@ -43,8 +43,9 @@ export const INITIAL_GUIDE_CARDS: Card[] = [
     zIndex: 3,
     content: `📦 分组与整理
 • 多选卡片 + Ctrl + G：快速打组
-• 拖拽单卡进出分组自动加入/脱离
-• 选中分组 + Ctrl + Shift + G：解散分组
+• Group 可收起、命名、拖动；右键添加标签
+• Ctrl + J：新建圆形父物体并关联选中卡片
+• 选中 Group + Ctrl + Shift + G：解散打组
 • Ctrl + P：自动紧凑装箱排版
 • Ctrl + 方向键：顶/底/左/右边缘对齐
 • 拖拽按住 Shift + Space：开启 12px 磁吸对齐`,
@@ -54,16 +55,20 @@ export const INITIAL_GUIDE_CARDS: Card[] = [
 let debounceTimer: number | null = null;
 let pendingState: { cards: Card[]; groups: Group[] } | null = null;
 
+function withoutParsingState(cards: Card[]): Card[] {
+  return cards.map(({ isParsing: _isParsing, ...card }) => card);
+}
+
 export function getLocalData(): { cards: Card[]; groups: Group[] } | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed)) {
-      return { cards: parsed, groups: [] };
+      return { cards: withoutParsingState(parsed), groups: [] };
     }
     return {
-      cards: Array.isArray(parsed.cards) ? parsed.cards : [],
+      cards: Array.isArray(parsed.cards) ? withoutParsingState(parsed.cards) : [],
       groups: Array.isArray(parsed.groups) ? parsed.groups : [],
     };
   } catch (e) {
@@ -73,10 +78,22 @@ export function getLocalData(): { cards: Card[]; groups: Group[] } | null {
 }
 
 export function writeLocalData(cards: Card[], groups: Group[]) {
+  const persistedCards = withoutParsingState(cards);
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ cards, groups }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ cards: persistedCards, groups }));
   } catch (e) {
-    console.error('Failed to write localStorage:', e);
+    try {
+      // Strip large Base64 images for LocalStorage backup only so metadata is never lost
+      const slimCards = persistedCards.map((c) => {
+        if (c.image && c.image.startsWith('data:image/') && c.image.length > 50000) {
+          return { ...c, image: undefined };
+        }
+        return c;
+      });
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ cards: slimCards, groups }));
+    } catch {
+      console.warn('LocalStorage quota exceeded, data safe in backend and memory.');
+    }
   }
 }
 
@@ -85,7 +102,7 @@ export async function syncToBackend(cards: Card[], groups: Group[]) {
     await fetch('/api/cards', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cards, groups }),
+      body: JSON.stringify({ cards: withoutParsingState(cards), groups }),
     });
   } catch (e) {
     // 静默降级，不阻塞前端
@@ -114,7 +131,7 @@ export function flushStoredCards() {
     writeLocalData(pendingState.cards, pendingState.groups);
     // Send beacon or synchronous/fast fetch on unload if possible
     try {
-      const blob = new Blob([JSON.stringify(pendingState)], { type: 'application/json' });
+      const blob = new Blob([JSON.stringify({ cards: withoutParsingState(pendingState.cards), groups: pendingState.groups })], { type: 'application/json' });
       navigator.sendBeacon('/api/cards', blob);
     } catch {
       // Fallback
@@ -129,7 +146,7 @@ export async function loadInitialData(): Promise<{ cards: Card[]; groups: Group[
     const res = await fetch('/api/cards');
     if (res.ok) {
       const data = await res.json();
-      const cards = Array.isArray(data.cards) ? data.cards : (Array.isArray(data) ? data : []);
+      const cards = withoutParsingState(Array.isArray(data.cards) ? data.cards : (Array.isArray(data) ? data : []));
       const groups = Array.isArray(data.groups) ? data.groups : [];
       if (cards.length > 0 || groups.length > 0) {
         writeLocalData(cards, groups);
@@ -153,7 +170,7 @@ export async function loadInitialData(): Promise<{ cards: Card[]; groups: Group[
 export function exportBackup(cards: Card[], groups: Group[]) {
   const dateStr = new Date().toISOString().slice(0, 10);
   const filename = `随想便签备份_${dateStr}.json`;
-  const data = JSON.stringify({ cards, groups }, null, 2);
+  const data = JSON.stringify({ cards: withoutParsingState(cards), groups }, null, 2);
   const blob = new Blob([data], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -175,9 +192,9 @@ export function importBackupFromFile(file: File): Promise<{ cards: Card[]; group
         let cards: Card[] = [];
         let groups: Group[] = [];
         if (Array.isArray(parsed)) {
-          cards = parsed;
+          cards = withoutParsingState(parsed);
         } else if (parsed && typeof parsed === 'object') {
-          cards = Array.isArray(parsed.cards) ? parsed.cards : [];
+          cards = Array.isArray(parsed.cards) ? withoutParsingState(parsed.cards) : [];
           groups = Array.isArray(parsed.groups) ? parsed.groups : [];
         }
         resolve({ cards, groups });

@@ -1,6 +1,8 @@
 import { useState, useRef, useCallback } from 'react';
-import { Card, Rect } from '../types';
+import { Card, Group, Rect } from '../types';
 import { rectsIntersect } from '../utils/canvas';
+import { cardVisualBounds } from '../utils/cardBounds';
+import { bundleBounds, bundleCollapsedHeight, bundleCollapsedWidth } from './useBundleGroups';
 
 export function useSelection() {
   const [selectedCardIds, setSelectedCardIds] = useState<Set<string>>(new Set());
@@ -12,6 +14,8 @@ export function useSelection() {
 
   const selectedGroupIdsRef = useRef<Set<string>>(selectedGroupIds);
   selectedGroupIdsRef.current = selectedGroupIds;
+  const marqueeBaseCardsRef = useRef<Set<string>>(new Set());
+  const marqueeBaseGroupsRef = useRef<Set<string>>(new Set());
 
   const clearSelection = useCallback(() => {
     setSelectedCardIds(new Set());
@@ -48,15 +52,29 @@ export function useSelection() {
     }
   }, []);
 
-  const updateMarqueeSelection = useCallback((rect: Rect, cards: Card[], isShift: boolean) => {
+  const beginMarqueeSelection = useCallback((isShift: boolean) => {
+    marqueeBaseCardsRef.current = new Set(isShift ? selectedCardIdsRef.current : []);
+    marqueeBaseGroupsRef.current = new Set(isShift ? selectedGroupIdsRef.current : []);
+  }, []);
+
+  const updateMarqueeSelection = useCallback((rect: Rect, cards: Card[], groups: Group[]) => {
     setSelectionRect(rect);
-    const matched = new Set<string>(isShift ? selectedCardIdsRef.current : []);
+    const matchedGroups = new Set(marqueeBaseGroupsRef.current);
+    groups.forEach((group) => {
+      const members = cards.filter((card) => card.bundleId === group.id);
+      const bounds = group.kind === 'bundle' && !group.collapsed ? bundleBounds(cards, group.id, group) : group;
+      const width = group.kind === 'bundle' && group.collapsed ? bundleCollapsedWidth(group.width) : bounds.width;
+      const height = group.kind === 'bundle' && group.collapsed ? bundleCollapsedHeight(members.length) : bounds.height;
+      if (rectsIntersect(rect, { x: bounds.x, y: bounds.y, width, height })) matchedGroups.add(group.id);
+    });
+    const matched = new Set(marqueeBaseCardsRef.current);
     cards.forEach((c) => {
-      if (rectsIntersect(rect, { x: c.x, y: c.y, width: c.width, height: c.height })) {
+      if ((!c.bundleId || !matchedGroups.has(c.bundleId)) && rectsIntersect(rect, cardVisualBounds(c))) {
         matched.add(c.id);
       }
     });
     setSelectedCardIds(matched);
+    setSelectedGroupIds(matchedGroups);
   }, []);
 
   return {
@@ -71,6 +89,7 @@ export function useSelection() {
     clearSelection,
     selectCard,
     selectGroup,
+    beginMarqueeSelection,
     updateMarqueeSelection,
   };
 }

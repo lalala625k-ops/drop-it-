@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 
 interface PieTitleInputModalProps {
   initialTitle: string;
+  originalTitle?: string;
+  cardType?: string;
   position: { x: number; y: number };
   onConfirm: (title: string | null) => void;
   onBackToPie: () => void;
@@ -10,6 +12,8 @@ interface PieTitleInputModalProps {
 
 export const PieTitleInputModal: React.FC<PieTitleInputModalProps> = ({
   initialTitle,
+  originalTitle,
+  cardType,
   position,
   onConfirm,
   onBackToPie,
@@ -43,33 +47,33 @@ export const PieTitleInputModal: React.FC<PieTitleInputModalProps> = ({
 
   return (
     <div
-      className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-auto bg-neutral-900/95 border border-white/15 shadow-2xl backdrop-blur-xl text-neutral-100 w-80 p-4 select-none animate-in fade-in zoom-in-95 duration-100 rounded-none"
+      className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-auto bg-paper border border-ash shadow-none text-ink w-80 p-4 select-none animate-in fade-in zoom-in-95 duration-100 rounded-none"
       style={{ left: `${position.x}px`, top: `${position.y}px` }}
       onMouseDown={(e) => e.stopPropagation()}
     >
       {/* Header */}
-      <div className="flex items-center justify-between pb-3 mb-3 border-b border-white/10">
+      <div className="flex items-center justify-between pb-2.5 mb-3 border-b border-ash">
         <div className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-purple-500" />
-          <span className="text-xs font-semibold text-neutral-200 tracking-wide">设置便签标题</span>
+          <span className="w-2 h-2 rounded-full bg-ink" />
+          <span className="text-[11px] font-bold uppercase tracking-[0.05em] text-ink">设置便签顶部标题</span>
         </div>
         <button
           type="button"
           onClick={onBackToPie}
-          className="text-[10px] text-neutral-400 hover:text-white px-1.5 py-0.5 rounded-none border border-white/10 hover:border-white/20 transition-colors"
+          className="text-[10px] font-bold uppercase tracking-[0.05em] text-ink/70 hover:text-ink px-2 py-0.5 rounded-[10px] border border-ash hover:border-ink transition-colors"
         >
-          返回饼菜单
+          返回
         </button>
       </div>
 
       {/* Input */}
       <div className="space-y-3">
         <div>
-          <div className="flex items-center justify-between text-[11px] text-neutral-400 mb-1.5">
-            <span>输入卡片标题</span>
+          <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-[0.05em] text-ink/60 mb-1.5">
+            <span>输入卡片标题 (# 一级 · ## 二级)</span>
             {initialTitle && (
-              <span className="text-neutral-500 font-mono truncate max-w-[120px]" title={initialTitle}>
-                原: {initialTitle}
+              <span className="text-ink/60 font-mono truncate max-w-[120px]" title={initialTitle}>
+                当前: {initialTitle}
               </span>
             )}
           </div>
@@ -79,9 +83,22 @@ export const PieTitleInputModal: React.FC<PieTitleInputModalProps> = ({
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="如: 待办清单, 读书笔记, 项目灵感..."
-            className="w-full bg-neutral-950/90 text-sm px-3 py-2 outline-none font-sans rounded-none transition-colors border border-neutral-700 text-neutral-100 focus:border-purple-500 focus:ring-1 focus:ring-purple-500/50"
+            placeholder="如: # 待办清单 或 ## 项目灵感..."
+            className="w-full bg-paper text-ink text-[13px] px-3 py-1.5 outline-none font-retina rounded-[10px] transition-colors border border-ink/40 focus:border-ink"
           />
+          <div className="mt-1 text-[10px] text-ink/50 font-mono">
+            提示: # + 空格为一级标题(24px)，## + 空格为二级标题(18px)
+          </div>
+          {originalTitle && cardType === 'web' && (
+            <div className="mt-1.5 text-[10px] font-mono text-ink/50 truncate" title={originalTitle}>
+              原网页标题: {originalTitle} (将完整保留，不被替换)
+            </div>
+          )}
+          {originalTitle && cardType === 'image' && (
+            <div className="mt-1.5 text-[10px] font-mono text-ink/50 truncate" title={originalTitle}>
+              原图片标题: {originalTitle} (将完整保留，不被替换)
+            </div>
+          )}
         </div>
 
         {/* Action Buttons */}
@@ -91,9 +108,9 @@ export const PieTitleInputModal: React.FC<PieTitleInputModalProps> = ({
               <button
                 type="button"
                 onClick={handleClear}
-                className="px-2.5 py-1.5 text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-950/30 border border-rose-900/50 transition-colors rounded-none"
+                className="px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.05em] text-ink/80 hover:text-ink border border-ash hover:border-ink transition-colors rounded-[10px]"
               >
-                清除标题
+                清除顶部标题
               </button>
             )}
           </div>
@@ -101,16 +118,16 @@ export const PieTitleInputModal: React.FC<PieTitleInputModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="px-3 py-1.5 text-xs text-neutral-400 hover:text-white border border-white/10 hover:border-white/20 transition-colors rounded-none"
+              className="px-3 py-1 text-[11px] font-bold uppercase tracking-[0.05em] text-ink/70 hover:text-ink border border-ash hover:border-ink transition-colors rounded-[10px]"
             >
               取消 (ESC)
             </button>
             <button
               type="button"
               onClick={() => onConfirm(title.trim() || null)}
-              className="px-4 py-1.5 text-xs font-medium rounded-none transition-all bg-purple-600 hover:bg-purple-500 text-white shadow-lg shadow-purple-950/50 cursor-pointer"
+              className="px-3.5 py-1 text-[11px] font-bold uppercase tracking-[0.05em] rounded-[10px] transition-all bg-ink text-paper border border-ink hover:bg-ink/90 cursor-pointer"
             >
-              保存标题 (Enter)
+              保存顶部标题 (Enter)
             </button>
           </div>
         </div>

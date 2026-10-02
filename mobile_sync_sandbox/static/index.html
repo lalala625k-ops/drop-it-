@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>随想便签 · 手机同步隔离测试看板</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      user-select: none;
+      background-color: #fbfbfa;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    #canvas-container {
+      width: 100vw;
+      height: 100vh;
+      position: relative;
+      cursor: grab;
+      background-image: radial-gradient(circle, #e2e1dc 1.2px, transparent 1.2px);
+      background-size: 24px 24px;
+    }
+    #canvas-container.panning {
+      cursor: grabbing;
+    }
+    .canvas-card {
+      position: absolute;
+      background: #ffffff;
+      border: 1px solid rgba(29, 29, 29, 0.15);
+      border-radius: 12px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05);
+      cursor: move;
+      transition: box-shadow 0.15s, border-color 0.15s;
+    }
+    .canvas-card:hover {
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+      border-color: #1d1d1d;
+    }
+    .inbox-drawer {
+      transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s;
+    }
+    .inbox-drawer.closed {
+      transform: translateX(110%);
+      opacity: 0;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body class="w-screen h-screen">
+
+  <!-- Canvas Container -->
+  <div id="canvas-container">
+    <div id="canvas-world" class="absolute top-0 left-0 w-0 h-0" style="transform-origin: 0 0;">
+      <!-- Placed Cards will appear here -->
+    </div>
+  </div>
+
+  <!-- Top Floating Bar -->
+  <header class="fixed top-4 left-4 z-40 bg-white/95 backdrop-blur-md border border-black/10 shadow-sm rounded-2xl px-4 py-2.5 flex items-center gap-3">
+    <div class="w-7 h-7 rounded-lg bg-[#1d1d1d] text-white flex items-center justify-center font-bold text-xs">
+      🎨
+    </div>
+    <div>
+      <div class="flex items-center gap-2">
+        <h1 class="text-xs font-bold text-black/90">随想便签 · 手机同步隔离测试区</h1>
+        <span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-mono">PORT 8088</span>
+      </div>
+      <p id="folderNotice" class="text-[10px] text-black/50 font-mono">
+        监控文件夹: <code>mobile_sync_sandbox/inbox_data/</code>
+      </p>
+    </div>
+
+    <div class="h-6 w-px bg-black/10 mx-1"></div>
+
+    <button onclick="openPairModal()" class="px-3 py-1.5 bg-[#1d1d1d] text-white text-xs font-bold rounded-xl flex items-center gap-1.5 hover:bg-black active:scale-95 transition">
+      <span>📱 手机扫码配对</span>
+    </button>
+
+    <button onclick="simulateMobileShare()" class="px-3 py-1.5 border border-black/15 bg-black/5 hover:bg-black/10 text-black text-xs font-medium rounded-xl flex items-center gap-1 active:scale-95 transition">
+      <span>⚡ 模拟手机发送</span>
+    </button>
+
+    <button onclick="clearAllCanvasCards()" class="px-2.5 py-1.5 text-black/40 hover:text-red-600 text-xs transition" title="清空画布上的测试卡片">
+      清空画布
+    </button>
+  </header>
+
+  <!-- Floating Inbox Toggle Button (Bottom Right) -->
+  <div class="fixed bottom-6 right-6 z-40 flex items-center gap-3">
+    <button id="inboxToggleBtn" onclick="toggleDrawer()"
+      class="px-4 py-3 bg-[#1d1d1d] text-white rounded-2xl shadow-xl hover:bg-black active:scale-95 transition flex items-center gap-2.5 border border-white/20">
+      <div class="relative flex items-center">
+        <span class="text-base">📥</span>
+        <span id="badgeCount" class="absolute -top-2 -right-3 px-1.5 py-0.2 min-w-[18px] text-[10px] font-bold rounded-full bg-red-500 text-white flex items-center justify-center border-2 border-[#1d1d1d]">
+          0
+        </span>
+      </div>
+      <span class="text-xs font-bold">手机暂存抽屉</span>
+    </button>
+  </div>
+
+  <!-- Inbox Drawer (Slide-out panel on right) -->
+  <aside id="inboxDrawer" class="inbox-drawer fixed top-4 right-4 bottom-20 w-80 bg-white/95 backdrop-blur-xl border border-black/15 shadow-2xl rounded-2xl z-30 flex flex-col overflow-hidden closed">
+    <div class="p-3.5 border-b border-black/10 flex items-center justify-between bg-stone-50/50">
+      <div class="flex items-center gap-2">
+        <span class="text-sm">📥</span>
+        <h2 class="text-xs font-bold">手机待处理箱</h2>
+        <span id="drawerTotalText" class="text-[10px] text-black/40 font-mono">(0)</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <button onclick="refreshInbox()" class="text-[11px] text-black/50 hover:text-black p-1">🔄 刷新</button>
+        <button onclick="toggleDrawer()" class="text-black/40 hover:text-black text-sm p-1 leading-none">&times;</button>
+      </div>
+    </div>
+
+    <div class="p-2 text-[10px] text-black/50 bg-amber-50/80 border-b border-amber-200/50 flex items-center gap-1.5 px-3">
+      <span>💡</span>
+      <span>按住卡片直接<strong>拖入画布</strong>任意位置松手放置</span>
+    </div>
+
+    <!-- Scrollable Items List -->
+    <div id="inboxItemsList" class="flex-1 p-3 space-y-2.5 overflow-y-auto">
+      <div class="text-center py-12 text-black/40 text-xs">
+        暂存箱为空<br>手机端分享或拖入文件将自动出现
+      </div>
+    </div>
+
+    <div class="p-3 border-t border-black/10 bg-stone-50/50 flex justify-between items-center text-[10px] text-black/40 font-mono">
+      <span>自动实时同步已激活</span>
+      <button onclick="openFolderLocation()" class="text-blue-600 hover:underline">查看文件夹</button>
+    </div>
+  </aside>
+
+  <!-- Mobile Pairing Modal -->
+  <div id="pairModal" class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-white rounded-3xl p-6 max-w-sm w-full space-y-4 shadow-2xl border border-black/10 text-center">
+      <div class="flex justify-between items-center">
+        <h3 class="text-sm font-bold flex items-center gap-1.5">
+          <span>📱</span> 手机扫码连接此看板
+        </h3>
+        <button onclick="closePairModal()" class="text-black/40 hover:text-black text-lg">&times;</button>
+      </div>
+
+      <p class="text-xs text-black/60">
+        手机与电脑连接同一 Wi-Fi，用微信或系统相机扫码打开：
+      </p>
+
+      <div class="flex justify-center py-2">
+        <div id="qrcode" class="p-3 bg-white border border-black/10 rounded-2xl shadow-sm"></div>
+      </div>
+
+      <div class="p-2.5 bg-stone-100 rounded-xl text-left space-y-1 font-mono text-[11px] text-black/80 break-all">
+        <span class="text-[10px] text-black/40 block">手机浏览器直接访问：</span>
+        <a id="mobileLink" href="#" target="_blank" class="text-blue-600 hover:underline"></a>
+      </div>
+
+      <button onclick="closePairModal()" class="w-full py-2.5 bg-[#1d1d1d] text-white text-xs font-bold rounded-xl active:scale-95 transition">
+        完成
+      </button>
+    </div>
+  </div>
+
+  <script>
+    // State
+    let viewport = { x: window.innerWidth / 2, y: window.innerHeight / 2, zoom: 1 };
+    let isPanning = false;
+    let startPan = { x: 0, y: 0 };
+    let inboxItems = [];
+    let placedCards = [];
+    let lanInfo = null;
+
+    const container = document.getElementById('canvas-container');
+    const world = document.getElementById('canvas-world');
+
+    // Pan & Zoom Implementation
+    function updateTransform() {
+      world.style.transform = `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`;
+    }
+    updateTransform();
+
+    container.addEventListener('mousedown', (e) => {
+      if (e.target === container || e.target === world) {
+        isPanning = true;
+        container.classList.add('panning');
+        startPan = { x: e.clientX - viewport.x, y: e.clientY - viewport.y };
+      }
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (isPanning) {
+        viewport.x = e.clientX - startPan.x;
+        viewport.y = e.clientY - startPan.y;
+        updateTransform();
+      }
+    });
+
+    window.addEventListener('mouseup', () => {
+      isPanning = false;
+      container.classList.remove('panning');
+    });
+
+    container.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const zoomFactor = e.deltaY < 0 ? 1.08 : 0.92;
+      const newZoom = Math.min(Math.max(viewport.zoom * zoomFactor, 0.2), 3);
+
+      const mouseX = e.clientX;
+      const mouseY = e.clientY;
+      const worldX = (mouseX - viewport.x) / viewport.zoom;
+      const worldY = (mouseY - viewport.y) / viewport.zoom;
+
+      viewport.zoom = newZoom;
+      viewport.x = mouseX - worldX * newZoom;
+      viewport.y = mouseY - worldY * newZoom;
+      updateTransform();
+    }, { passive: false });
+
+    // Drawer Logic
+    let isDrawerOpen = true;
+    function toggleDrawer() {
+      isDrawerOpen = !isDrawerOpen;
+      const drawer = document.getElementById('inboxDrawer');
+      if (isDrawerOpen) {
+        drawer.classList.remove('closed');
+      } else {
+        drawer.classList.add('closed');
+      }
+    }
+
+    // Modal
+    function openPairModal() {
+      document.getElementById('pairModal').classList.remove('hidden');
+    }
+    function closePairModal() {
+      document.getElementById('pairModal').classList.add('hidden');
+    }
+
+    // Canvas Drag and Drop Target
+    container.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+    });
+
+    container.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      const clientX = e.clientX;
+      const clientY = e.clientY;
+      const dropWorldX = (clientX - viewport.x) / viewport.zoom;
+      const dropWorldY = (clientY - viewport.y) / viewport.zoom;
+
+      // Case A: Dragged from Inbox Drawer
+      const itemId = e.dataTransfer.getData('text/plain');
+      if (itemId) {
+        const item = inboxItems.find(i => i.id === itemId);
+        if (item) {
+          placeCardOnCanvas(item, dropWorldX - 140, dropWorldY - 100);
+          // Mark as consumed
+          fetch(`/api/items/${item.id}/consume`, { method: 'POST' }).then(() => refreshInbox());
+          return;
+        }
+      }
+
+      // Case B: Dragged from Windows Explorer directly
+      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        const file = e.dataTransfer.files[0];
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('title', file.name);
+
+        const res = await fetch('/api/share', { method: 'POST', body: formData });
+        if (res.ok) {
+          const data = await res.json();
+          const newItem = data.items[0];
+          placeCardOnCanvas(newItem, dropWorldX - 140, dropWorldY - 100);
+          refreshInbox();
+        }
+      }
+    });
+
+    // Place card onto the Canvas
+    function placeCardOnCanvas(item, x, y) {
+      const cardEl = document.createElement('div');
+      cardEl.className = 'canvas-card p-3 flex flex-col gap-2 bg-white';
+      cardEl.style.left = `${x}px`;
+      cardEl.style.top = `${y}px`;
+      cardEl.style.width = '280px';
+
+      let contentHtml = '';
+      if (item.type === 'image') {
+        contentHtml = `
+          <div class="w-full h-44 bg-stone-100 rounded-lg overflow-hidden flex items-center justify-center border border-black/10">
+            <img src="${item.url_path}" class="w-full h-full object-contain pointer-events-none" />
+          </div>
+          <div class="text-[11px] font-mono text-black/60 truncate">${item.original_filename || item.title}</div>
+        `;
+      } else if (item.type === 'web') {
+        contentHtml = `
+          <div class="flex items-center gap-1.5 text-xs font-bold text-black/90">
+            <span>🌐</span>
+            <span class="truncate">${item.title || '网页链接'}</span>
+          </div>
+          <a href="${item.url}" target="_blank" class="text-[11px] text-blue-600 font-mono truncate hover:underline block">${item.url}</a>
+        `;
+      } else {
+        contentHtml = `
+          <div class="text-xs font-bold text-black/80 flex items-center gap-1">
+            <span>📝</span> <span>${item.title || '手机笔记'}</span>
+          </div>
+          <p class="text-xs text-black/70 whitespace-pre-wrap max-h-48 overflow-y-auto leading-relaxed">${item.text}</p>
+        `;
+      }
+
+      cardEl.innerHTML = `
+        ${contentHtml}
+        <div class="pt-1 border-t border-black/5 flex items-center justify-between text-[10px] text-black/40 font-mono">
+          <span>📱 来自手机同步</span>
+          <span>${item.timestamp.split(' ')[1] || ''}</span>
+        </div>
+      `;
+
+      // Enable dragging card on canvas
+      enableCardDrag(cardEl);
+      world.appendChild(cardEl);
+      placedCards.push({ id: item.id, element: cardEl });
+    }
+
+    function enableCardDrag(el) {
+      let isDragging = false;
+      let startMouse = { x: 0, y: 0 };
+      let initialPos = { x: 0, y: 0 };
+
+      el.addEventListener('mousedown', (e) => {
+        if (e.button !== 0) return;
+        e.stopPropagation();
+        isDragging = true;
+        startMouse = { x: e.clientX, y: e.clientY };
+        initialPos = { x: parseFloat(el.style.left), y: parseFloat(el.style.top) };
+        el.style.zIndex = 1000;
+      });
+
+      window.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        const dx = (e.clientX - startMouse.x) / viewport.zoom;
+        const dy = (e.clientY - startMouse.y) / viewport.zoom;
+        el.style.left = `${initialPos.x + dx}px`;
+        el.style.top = `${initialPos.y + dy}px`;
+      });
+
+      window.addEventListener('mouseup', () => {
+        if (isDragging) {
+          isDragging = false;
+          el.style.zIndex = '';
+        }
+      });
+    }
+
+    function clearAllCanvasCards() {
+      world.innerHTML = '';
+      placedCards = [];
+    }
+
+    // Inbox polling and rendering
+    async function refreshInbox() {
+      try {
+        const res = await fetch('/api/items');
+        if (res.ok) {
+          const data = await res.json();
+          inboxItems = data.items || [];
+          renderInbox();
+        }
+      } catch (err) {}
+    }
+
+    function renderInbox() {
+      const container = document.getElementById('inboxItemsList');
+      const unconsumed = inboxItems.filter(i => !i.consumed);
+
+      const badge = document.getElementById('badgeCount');
+      badge.innerText = unconsumed.length;
+      badge.style.display = unconsumed.length > 0 ? 'flex' : 'none';
+      document.getElementById('drawerTotalText').innerText = `(${unconsumed.length} 待放 / ${inboxItems.length} 总计)`;
+
+      if (inboxItems.length === 0) {
+        container.innerHTML = `
+          <div class="text-center py-12 text-black/40 text-xs">
+            暂存箱为空<br>手机端分享或拖入文件将自动出现
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = inboxItems.map(item => {
+        const isImg = item.type === 'image';
+        return `
+          <div id="item-${item.id}" draggable="${!item.consumed}"
+            ondragstart="handleItemDragStart(event, '${item.id}')"
+            class="p-2.5 rounded-xl border ${item.consumed ? 'bg-stone-100/60 border-black/5 opacity-60' : 'bg-white border-black/10 shadow-sm cursor-grab active:cursor-grabbing hover:border-black/40'} transition flex flex-col gap-2">
+
+            <div class="flex items-center gap-2.5">
+              ${isImg ? `
+                <img src="${item.url_path}" class="w-12 h-12 rounded-lg object-cover border border-black/10 flex-shrink-0" />
+              ` : `
+                <div class="w-12 h-12 rounded-lg bg-stone-100 flex items-center justify-center text-lg flex-shrink-0">
+                  ${item.type === 'web' ? '🌐' : '📝'}
+                </div>
+              `}
+              <div class="min-w-0 flex-1">
+                <p class="text-xs font-bold truncate text-black/90">${item.title || item.text || '无标题'}</p>
+                <p class="text-[10px] text-black/40 font-mono mt-0.5">${item.timestamp}</p>
+              </div>
+            </div>
+
+            <div class="flex items-center justify-between pt-1 border-t border-black/5">
+              <span class="text-[10px] ${item.consumed ? 'text-black/40' : 'text-emerald-700 font-bold'}">
+                ${item.consumed ? '✓ 已放入画布' : '✋ 拖我入画布'}
+              </span>
+              <button onclick="deleteInboxItem('${item.id}', event)" class="text-[10px] text-black/30 hover:text-red-500 p-0.5">
+                删除
+              </button>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function handleItemDragStart(e, id) {
+      e.dataTransfer.setData('text/plain', id);
+      e.dataTransfer.effectAllowed = 'copyMove';
+    }
+
+    async function deleteInboxItem(id, e) {
+      e.stopPropagation();
+      await fetch(`/api/items/${id}`, { method: 'DELETE' });
+      refreshInbox();
+    }
+
+    async function simulateMobileShare() {
+      const types = ['screenshot', 'text', 'link'];
+      const pick = types[Math.floor(Math.random() * types.length)];
+
+      if (pick === 'text') {
+        await fetch('/api/share', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: '手机复制的灵感段落',
+            text: '无限画布的最迷人之处在于：它消除了传统笔记的分页焦虑，给思维以呼吸的物理空间。'
+          })
+        });
+      } else if (pick === 'link') {
+        await fetch('/api/share', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: 'B站高质量分享：Agent 设计模式深度解析',
+            url: 'https://www.bilibili.com/video/BV1cM896YE9P'
+          })
+        });
+      } else {
+        // Generate an SVG screenshot data blob
+        const svgBlob = new Blob([`
+          <svg xmlns="http://www.w3.org/2000/svg" width="400" height="250" viewBox="0 0 400 250">
+            <rect width="400" height="250" fill="#2d3748" rx="16"/>
+            <text x="200" y="100" fill="#ffffff" font-size="20" font-family="sans-serif" font-weight="bold" text-anchor="middle">📱 手机截图示例</text>
+            <text x="200" y="140" fill="#a0aec0" font-size="13" font-family="sans-serif" text-anchor="middle">测试时间: ${new Date().toLocaleTimeString()}</text>
+          </svg>
+        `], { type: 'image/svg+xml' });
+
+        const formData = new FormData();
+        formData.append('file', svgBlob, `手机截图_${Date.now()}.svg`);
+        formData.append('title', '手机截图示例.svg');
+        await fetch('/api/share', { method: 'POST', body: formData });
+      }
+
+      refreshInbox();
+      if (!isDrawerOpen) toggleDrawer();
+    }
+
+    function openFolderLocation() {
+      alert(`文件夹物理路径位于:\n${lanInfo?.inbox_path || 'mobile_sync_sandbox/inbox_data/'}\n你可以随时在 Windows 资源管理器打开该目录！`);
+    }
+
+    // Init & QRCode
+    async function init() {
+      try {
+        const res = await fetch('/api/lan-info');
+        if (res.ok) {
+          lanInfo = await res.json();
+          document.getElementById('mobileLink').innerText = lanInfo.mobile_url;
+          document.getElementById('mobileLink').href = lanInfo.mobile_url;
+          document.getElementById('folderNotice').innerHTML = `监控文件夹: <code>${lanInfo.inbox_path}</code>`;
+
+          new QRCode(document.getElementById("qrcode"), {
+            text: lanInfo.mobile_url,
+            width: 160,
+            height: 160,
+            colorDark : "#1d1d1d",
+            colorLight : "#ffffff",
+            correctLevel : QRCode.CorrectLevel.M
+          });
+        }
+      } catch (err) {}
+
+      refreshInbox();
+      setInterval(refreshInbox, 1500); // Poll every 1.5s
+    }
+
+    init();
+  </script>
+</body>
+</html>

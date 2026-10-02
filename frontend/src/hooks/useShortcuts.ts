@@ -5,6 +5,7 @@ interface UseShortcutsProps {
   onDelete: () => void;
   onUndo: () => void;
   onGroup: () => void;
+  onBundle: () => void;
   onUngroup: () => void;
   onAutoPack: () => void;
   onAlign: (direction: 'top' | 'bottom' | 'left' | 'right') => void;
@@ -13,6 +14,8 @@ interface UseShortcutsProps {
   onCopy?: () => void;
   onDuplicate?: () => void;
   onSearch?: () => void;
+  onMinimapOpen?: () => void;
+  onMinimapClose?: () => void;
 }
 
 export function useShortcuts({
@@ -20,6 +23,7 @@ export function useShortcuts({
   onDelete,
   onUndo,
   onGroup,
+  onBundle,
   onUngroup,
   onAutoPack,
   onAlign,
@@ -28,6 +32,8 @@ export function useShortcuts({
   onCopy,
   onDuplicate,
   onSearch,
+  onMinimapOpen,
+  onMinimapClose,
 }: UseShortcutsProps) {
   const isShiftPressedRef = useRef(false);
   const isSpacePressedRef = useRef(false);
@@ -41,6 +47,14 @@ export function useShortcuts({
       if (e.key === 'Shift') isShiftPressedRef.current = true;
       if (e.key === ' ' || e.code === 'Space') isSpacePressedRef.current = true;
       if (e.key === 'Alt') isAltPressedRef.current = true;
+
+      // Hold M to open Minimap Navigation at cursor
+      if ((e.key === 'm' || e.key === 'M') && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        if (!isInputFocused && !e.repeat) {
+          onMinimapOpen?.();
+          return;
+        }
+      }
 
       // PRD 1.3: Ctrl + N (New blank text card)
       if (e.ctrlKey && (e.key === 'n' || e.key === 'N')) {
@@ -94,16 +108,18 @@ export function useShortcuts({
 
       // Ctrl + J: Create Parent Object (at mouse cursor)
       if ((e.ctrlKey || e.metaKey) && (e.key === 'j' || e.key === 'J')) {
+        if (isInputFocused) return;
         e.preventDefault();
         onGroup();
         return;
       }
 
-      // PRD 1.4: Ctrl + G / Ctrl + Shift + G (Group / Ungroup)
-      if (e.ctrlKey && (e.key === 'g' || e.key === 'G')) {
+      // Ctrl+G creates a card Group; Ctrl+J keeps the circular parent action.
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'g' || e.key === 'G')) {
+        if (isInputFocused) return;
         e.preventDefault();
         if (e.shiftKey) onUngroup();
-        else onGroup();
+        else onBundle();
         return;
       }
 
@@ -114,8 +130,8 @@ export function useShortcuts({
         return;
       }
 
-      // PRD 1.5: Ctrl + Arrow keys (Alignment)
-      if (e.ctrlKey && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+      // Align selected cards, including members of selected card Groups.
+      if (!isInputFocused && (e.altKey || e.ctrlKey) && !e.metaKey && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
         e.preventDefault();
         if (e.key === 'ArrowUp') onAlign('top');
         if (e.key === 'ArrowDown') onAlign('bottom');
@@ -124,10 +140,11 @@ export function useShortcuts({
         return;
       }
 
-      // PRD 2.3: Backup export (Ctrl + S / Ctrl + E)
-      if (e.ctrlKey && ['s', 'S', 'e', 'E'].includes(e.key)) {
+      // PRD 2.3: Backup export (Ctrl + E)
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'e' || e.key === 'E')) {
         e.preventDefault();
         onExportBackup();
+        return;
       }
     };
 
@@ -135,18 +152,32 @@ export function useShortcuts({
       if (e.key === 'Shift') isShiftPressedRef.current = false;
       if (e.key === ' ' || e.code === 'Space') isSpacePressedRef.current = false;
       if (e.key === 'Alt') isAltPressedRef.current = false;
+
+      // Release M to close Minimap Navigation
+      if (e.key === 'm' || e.key === 'M') {
+        onMinimapClose?.();
+      }
+    };
+
+    const handleWindowBlur = () => {
+      isShiftPressedRef.current = false;
+      isSpacePressedRef.current = false;
+      isAltPressedRef.current = false;
+      onMinimapClose?.();
     };
 
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', handleWindowBlur);
     window.addEventListener('paste', onPaste);
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', handleWindowBlur);
       window.removeEventListener('paste', onPaste);
     };
-  }, [onNewCard, onDelete, onUndo, onGroup, onUngroup, onAutoPack, onAlign, onExportBackup, onPaste, onCopy, onDuplicate, onSearch]);
+  }, [onNewCard, onDelete, onUndo, onGroup, onBundle, onUngroup, onAutoPack, onAlign, onExportBackup, onPaste, onCopy, onDuplicate, onSearch, onMinimapOpen, onMinimapClose]);
 
   return { isShiftPressedRef, isSpacePressedRef, isAltPressedRef };
 }

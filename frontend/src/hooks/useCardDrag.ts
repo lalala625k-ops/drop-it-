@@ -2,19 +2,18 @@ import { useState, useRef, useCallback } from 'react';
 import { Card, Group, SnapLine } from '../types';
 import { calculateMagneticSnapping } from '../utils/snap';
 import { isPointInRect } from '../utils/canvas';
+import { getParentLinkage } from '../utils/groupRelations';
+import { cardVisualBounds } from '../utils/cardBounds';
 
 // Helper to detect if a card overlaps or is dragged onto a circular parent object
-function isCardOverParent(
-  cardCenter: { x: number; y: number },
-  card: { width: number; height: number },
-  group: Group
-): boolean {
+function isCardOverParent(card: Card, group: Group): boolean {
+  const bounds = cardVisualBounds(card);
   const gx = group.x + group.width / 2;
   const gy = group.y + group.height / 2;
   const gr = group.width / 2;
-  const cardRadius = Math.min(card.width, card.height) / 2;
-  const dist = Math.hypot(cardCenter.x - gx, cardCenter.y - gy);
-  return dist <= gr + cardRadius + 30;
+  const closestX = Math.max(bounds.x, Math.min(gx, bounds.x + bounds.width));
+  const closestY = Math.max(bounds.y, Math.min(gy, bounds.y + bounds.height));
+  return Math.hypot(closestX - gx, closestY - gy) <= gr + 30;
 }
 
 export function useCardDrag() {
@@ -22,6 +21,8 @@ export function useCardDrag() {
   const [dragOverGroupId, setDragOverGroupId] = useState<string | null>(null);
   const initialPositionsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
   const activeDragGroupIdRef = useRef<string | null>(null);
+  const linkedCardIdsRef = useRef<Set<string>>(new Set());
+  const linkedBundleIdsRef = useRef<Set<string>>(new Set());
 
   const initDragCards = useCallback((selectedCards: Card[]) => {
     initialPositionsRef.current.clear();
@@ -30,15 +31,21 @@ export function useCardDrag() {
     });
   }, []);
 
-  const initDragGroup = useCallback((group: Group, allCards: Card[]) => {
+  const initDragGroup = useCallback((group: Group, allCards: Card[], allGroups: Group[]) => {
     activeDragGroupIdRef.current = group.id;
     initialPositionsRef.current.clear();
     initialPositionsRef.current.set(group.id, { x: group.x, y: group.y });
+    const linked = getParentLinkage(allCards, group.id);
+    linkedCardIdsRef.current = linked.cardIds;
+    linkedBundleIdsRef.current = linked.bundleIds;
     allCards
-      .filter((c) => c.groupId === group.id)
+      .filter((c) => linked.cardIds.has(c.id))
       .forEach((c) => {
         initialPositionsRef.current.set(c.id, { x: c.x, y: c.y });
       });
+    allGroups.filter((item) => linked.bundleIds.has(item.id)).forEach((item) => {
+      initialPositionsRef.current.set(item.id, { x: item.x, y: item.y });
+    });
   }, []);
 
   const updateCardPositions = useCallback(
@@ -78,10 +85,9 @@ export function useCardDrag() {
         const initialPos = initialPositionsRef.current.get(firstId);
         const cardObj = allCards.find((c) => c.id === firstId);
         if (initialPos && cardObj) {
-          const curCenterX = initialPos.x + dx + cardObj.width / 2;
-          const curCenterY = initialPos.y + dy + cardObj.height / 2;
-          const hoveredGroup = groups.find((g) =>
-            isCardOverParent({ x: curCenterX, y: curCenterY }, cardObj, g)
+          const movedCard = { ...cardObj, x: initialPos.x + dx, y: initialPos.y + dy };
+          const hoveredGroup = groups.find((g) => g.kind !== 'bundle' &&
+            isCardOverParent(movedCard, g)
           );
           setDragOverGroupId(hoveredGroup ? hoveredGroup.id : null);
         }
@@ -105,28 +111,56 @@ export function useCardDrag() {
       deltaWorldY: number,
       groupId: string,
       setGroups: React.Dispatch<React.SetStateAction<Group[]>>,
-      setCards: React.Dispatch<React.SetStateAction<Card[]>>
+      setCards: React.Dispatch<React.SetStateAction<Card[]>>,
+      moveChildren = false
     ) => {
       const targetGId = groupId || activeDragGroupIdRef.current;
       if (!targetGId) return;
 
-      setGroups((prev) =>
-        prev.map((g) => {
-          if (g.id !== targetGId) return g;
-          const init = initialPositionsRef.current.get(g.id);
-          return init ? { ...g, x: init.x + deltaWorldX, y: init.y + deltaWorldY } : g;
-        })
-      );
-      setCards((prev) =>
-        prev.map((c) => {
-          if (c.groupId !== targetGId) return c;
-          const init = initialPositionsRef.current.get(c.id);
-          return init ? { ...c, x: init.x + deltaWorldX, y: init.y + deltaWorldY } : c;
-        })
-      );
+      setGroups((prev) => prev.map((g) => {
+        const init = initialPositionsRef.current.get(g.id);
+        if (!init) return g;
+        if (g.id === targetGId || (moveChildren && linkedBundleIdsRef.current.has(g.id))) {
+          return { ...g, x: init.x + deltaWorldX, y: init.y + deltaWorldY };
+        }
+        if (linkedBundleIdsRef.current.has(g.id) && (g.x !== init.x || g.y !== init.y)) {
+          return { ...g, x: init.x, y: init.y };
+        }
+        return g;
+      }));
+      if (moveChildren) {
+        setCards((prev) =>
+          prev.map((c) => {
+            if (!linkedCardIdsRef.current.has(c.id)) return c;
+            const init = initialPositionsRef.current.get(c.id);
+            return init ? { ...c, x: init.x + deltaWorldX, y: init.y + deltaWorldY } : c;
+          })
+        );
+      } else {
+        setCards((prev) => {
+          let hasDiff = false;
+          const next = prev.map((c) => {
+            if (!linkedCardIdsRef.current.has(c.id)) return c;
+            const init = initialPositionsRef.current.get(c.id);
+            if (init && (c.x !== init.x || c.y !== init.y)) {
+              hasDiff = true;
+              return { ...c, x: init.x, y: init.y };
+            }
+            return c;
+          });
+          return hasDiff ? next : prev;
+        });
+      }
     },
     []
   );
+
+  const finishGroupDrag = useCallback(() => {
+    activeDragGroupIdRef.current = null;
+    initialPositionsRef.current.clear();
+    linkedCardIdsRef.current.clear();
+    linkedBundleIdsRef.current.clear();
+  }, []);
 
   const finishCardDrag = useCallback(
     (
@@ -148,12 +182,7 @@ export function useCardDrag() {
       if (selectedCards.length === 0) return { nextCards: cards };
 
       const firstCard = selectedCards[0];
-      const center = {
-        x: firstCard.x + firstCard.width / 2,
-        y: firstCard.y + firstCard.height / 2,
-      };
-
-      const targetGroup = groups.find((g) => isCardOverParent(center, firstCard, g)) || null;
+      const targetGroup = groups.find((g) => g.kind !== 'bundle' && isCardOverParent(firstCard, g)) || null;
       const targetGroupId = targetGroup ? targetGroup.id : null;
 
       let attachedCount = 0;
@@ -197,5 +226,6 @@ export function useCardDrag() {
     updateCardPositions,
     updateGroupPositions,
     finishCardDrag,
+    finishGroupDrag,
   };
 }

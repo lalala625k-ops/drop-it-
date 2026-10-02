@@ -1,4 +1,7 @@
 import { Card, Group, Rect, Viewport } from '../types';
+import { cardVisualBounds } from './cardBounds';
+
+export const MIN_CANVAS_ZOOM = 0.01;
 
 export function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
@@ -66,10 +69,11 @@ export function getBoundingBox(cards: Card[], groups: Group[] = []): Rect | null
   let maxY = -Infinity;
 
   for (const card of cards) {
-    minX = Math.min(minX, card.x);
-    minY = Math.min(minY, card.y);
-    maxX = Math.max(maxX, card.x + card.width);
-    maxY = Math.max(maxY, card.y + card.height);
+    const bounds = cardVisualBounds(card);
+    minX = Math.min(minX, bounds.x);
+    minY = Math.min(minY, bounds.y);
+    maxX = Math.max(maxX, bounds.x + bounds.width);
+    maxY = Math.max(maxY, bounds.y + bounds.height);
   }
 
   for (const group of groups) {
@@ -108,7 +112,7 @@ export function computeFitViewport(
 
   const zoomW = availW / box.width;
   const zoomH = availH / box.height;
-  const targetZoom = clamp(Math.min(zoomW, zoomH), 0.2, 3.0);
+  const targetZoom = clamp(Math.min(zoomW, zoomH), MIN_CANVAS_ZOOM, 3.0);
 
   const boxCenterX = box.x + box.width / 2;
   const boxCenterY = box.y + box.height / 2;
@@ -132,12 +136,13 @@ export function computeCardFocusViewport(
   const targetW = viewportWidth * 0.8;
   const targetH = viewportHeight * 0.8;
 
-  const zoomW = targetW / card.width;
-  const zoomH = targetH / card.height;
-  const targetZoom = clamp(Math.min(zoomW, zoomH), 0.2, 3.0);
+  const bounds = cardVisualBounds(card);
+  const zoomW = targetW / bounds.width;
+  const zoomH = targetH / bounds.height;
+  const targetZoom = clamp(Math.min(zoomW, zoomH), MIN_CANVAS_ZOOM, 3.0);
 
-  const cardCenterX = card.x + card.width / 2;
-  const cardCenterY = card.y + card.height / 2;
+  const cardCenterX = bounds.x + bounds.width / 2;
+  const cardCenterY = bounds.y + bounds.height / 2;
 
   const targetX = viewportWidth / 2 - cardCenterX * targetZoom;
   const targetY = viewportHeight / 2 - cardCenterY * targetZoom;

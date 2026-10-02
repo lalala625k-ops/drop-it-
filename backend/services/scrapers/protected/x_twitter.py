@@ -1,6 +1,6 @@
 # ==============================================================================
-# RULE ID: E-002 | X.com / Twitter
-# STATUS: ⏳ EXPERIMENTAL (Under active incubation & user validation)
+# RULE ID: P-005 | X.com / Twitter
+# STATUS: 🔒 PROTECTED (Verified & locked rule, approved OK by user)
 # ==============================================================================
 
 import re
@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 import requests
 from bs4 import BeautifulSoup
 from backend.services.scrapers.base import BaseScraper, ScrapedMetadata
-from backend.services.screenshot_service import capture_screenshot_fallback, detect_local_proxy
+from backend.services.screenshot_service import detect_local_proxy
 
 BOT_HEADERS = {
     "User-Agent": "Twitterbot/1.0",
@@ -32,7 +32,7 @@ DEFAULT_PLACEHOLDER = "https://abs.twimg.com/rweb/ssr/default/v2/og/image.png"
 
 class XTwitterScraper(BaseScraper):
     name = "x_twitter"
-    status = "EXPERIMENTAL"
+    status = "PROTECTED"
 
     def can_handle(self, url: str) -> bool:
         lower = url.lower()
@@ -61,11 +61,15 @@ class XTwitterScraper(BaseScraper):
                         author_name = tweet.get("author", {}).get("name") or username
                         screen_name = tweet.get("author", {}).get("screen_name") or username
                         text = tweet.get("text", "").strip()
+                        article = tweet.get("article") or {}
+                        article_title = (article.get("title") or "").strip()
+                        article_preview = (article.get("preview_text") or "").strip()
 
-                        # Image resolution: Mosaic -> Photo -> Video Thumbnail -> Avatar
-                        image = ""
+                        # Article cover -> native media -> linked-page card preview.
+                        cover_info = (article.get("cover_media") or {}).get("media_info") or {}
+                        image = cover_info.get("original_img_url") or ""
                         media = tweet.get("media", {})
-                        if media:
+                        if not image and media:
                             mosaic = media.get("mosaic", {}).get("formats", {}).get("jpeg")
                             photos = media.get("photos", [])
                             videos = media.get("videos", [])
@@ -77,11 +81,17 @@ class XTwitterScraper(BaseScraper):
                                 image = videos[0].get("thumbnail_url")
 
                         if not image:
-                            image = tweet.get("author", {}).get("avatar_url") or ""
+                            card = tweet.get("card")
+                            card = card if isinstance(card, dict) else {}
+                            card_image = card.get("image") or {}
+                            image = card_image.get("url") if isinstance(card_image, dict) else card_image
+                            image = image or ""
 
                         # Build descriptive title with author AND post text
                         clean_text = " ".join(text.split())
-                        if clean_text:
+                        if article_title:
+                            title = f"{author_name}: “{article_title}”"
+                        elif clean_text:
                             short_text = clean_text[:70] + "..." if len(clean_text) > 70 else clean_text
                             title = f"{author_name}: “{short_text}”"
                         else:
@@ -89,7 +99,7 @@ class XTwitterScraper(BaseScraper):
 
                         return {
                             "title": title,
-                            "description": text,
+                            "description": article_preview or text,
                             "image": image,
                             "favicon": TWITTER_FAVICON,
                             "url": url,
@@ -126,8 +136,6 @@ class XTwitterScraper(BaseScraper):
                         title = "X (Twitter) 动态"
 
                     image = raw_img if raw_img and DEFAULT_PLACEHOLDER not in raw_img else ""
-                    if not image:
-                        image = capture_screenshot_fallback(url) or ""
 
                     return {
                         "title": title,

@@ -1,11 +1,48 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Viewport, Card, Group } from '../types';
-import { clamp, computeFitViewport, computeCardFocusViewport } from '../utils/canvas';
+import { clamp, computeFitViewport, computeCardFocusViewport, MIN_CANVAS_ZOOM } from '../utils/canvas';
+
+const VIEWPORT_STORAGE_KEY = 'pinboard_viewport_v1';
+
+export function getSavedViewport(): Viewport | null {
+  try {
+    const raw = localStorage.getItem(VIEWPORT_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (
+      typeof parsed.x === 'number' &&
+      typeof parsed.y === 'number' &&
+      typeof parsed.zoom === 'number' &&
+      parsed.zoom >= MIN_CANVAS_ZOOM &&
+      parsed.zoom <= 3.0
+    ) {
+      return parsed;
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+export function saveViewportToStorage(vp: Viewport) {
+  try {
+    localStorage.setItem(VIEWPORT_STORAGE_KEY, JSON.stringify(vp));
+  } catch {
+    // ignore
+  }
+}
 
 export function useViewport() {
-  const [viewport, setViewport] = useState<Viewport>({ x: 0, y: 0, zoom: 1.0 });
+  const [viewport, setViewport] = useState<Viewport>(() => getSavedViewport() || { x: 0, y: 0, zoom: 1.0 });
   const viewportRef = useRef<Viewport>(viewport);
   viewportRef.current = viewport;
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      saveViewportToStorage(viewport);
+    }, 200);
+    return () => window.clearTimeout(timer);
+  }, [viewport]);
 
   const previousViewportRef = useRef<Viewport | null>(null);
   const focusedCardIdRef = useRef<string | null>(null);
@@ -30,33 +67,28 @@ export function useViewport() {
     return () => window.removeEventListener('mousemove', handleMouseMove);
   }, [handleMouseMove]);
 
-  // Wheel zoom centered at mouse pointer (0.2x ~ 3.0x)
+  // Wheel zoom centered at mouse pointer.
   const handleWheel = useCallback((e: React.WheelEvent) => {
     const target = e.target as HTMLElement;
 
-    // 1. Disable canvas zooming if user is scrolling inside an active text editing area or scrollable text container
-    if (
+    const isCanvasObject = !!target.closest('[data-card-id], [data-group-id], [data-bundle-id]');
+    // Controls outside the canvas objects keep their own scroll behavior.
+    if (!isCanvasObject && (
       target.tagName === 'TEXTAREA' ||
       target.tagName === 'INPUT' ||
       target.closest('textarea') ||
       target.closest('.overflow-y-auto') ||
       target.closest('.overflow-auto')
-    ) {
-      return;
-    }
-
-    // 2. Disable canvas zooming if scrolling on any selected card (isolated to card text scrolling)
-    const cardEl = target.closest('[data-card-id]');
-    if (cardEl && cardEl.getAttribute('data-selected') === 'true') {
+    )) {
       return;
     }
 
     e.preventDefault();
-    const zoomFactor = e.deltaY < 0 ? 1.08 : 0.92;
+    const zoomFactor = e.deltaY < 0 ? 1.12 : 0.88;
     const { clientX, clientY } = e;
 
     setViewport((prev) => {
-      const nextZoom = clamp(prev.zoom * zoomFactor, 0.2, 3.0);
+      const nextZoom = clamp(prev.zoom * zoomFactor, MIN_CANVAS_ZOOM, 3.0);
       const nextX = clientX - (clientX - prev.x) * (nextZoom / prev.zoom);
       const nextY = clientY - (clientY - prev.y) * (nextZoom / prev.zoom);
       return { x: nextX, y: nextY, zoom: nextZoom };

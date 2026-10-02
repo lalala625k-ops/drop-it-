@@ -1,4 +1,5 @@
 import { Card, SnapLine } from '../types';
+import { cardVisualBounds } from './cardBounds';
 
 export function calculateMagneticSnapping(
   draggedCard: Card,
@@ -9,24 +10,26 @@ export function calculateMagneticSnapping(
   let deltaY = 0;
   const snapLines: SnapLine[] = [];
 
-  const draggedLeft = draggedCard.x;
-  const draggedRight = draggedCard.x + draggedCard.width;
-  const draggedCenterX = draggedCard.x + draggedCard.width / 2;
+  const draggedBounds = cardVisualBounds(draggedCard);
+  const draggedLeft = draggedBounds.x;
+  const draggedRight = draggedBounds.x + draggedBounds.width;
+  const draggedCenterX = draggedBounds.x + draggedBounds.width / 2;
 
-  const draggedTop = draggedCard.y;
-  const draggedBottom = draggedCard.y + draggedCard.height;
+  const draggedTop = draggedBounds.y;
+  const draggedBottom = draggedBounds.y + draggedBounds.height;
   const draggedCenterY = draggedCard.y + draggedCard.height / 2;
 
   let minDiffX = Infinity;
   let minDiffY = Infinity;
 
   for (const other of otherCards) {
-    const otherLeft = other.x;
-    const otherRight = other.x + other.width;
-    const otherCenterX = other.x + other.width / 2;
+    const otherBounds = cardVisualBounds(other);
+    const otherLeft = otherBounds.x;
+    const otherRight = otherBounds.x + otherBounds.width;
+    const otherCenterX = otherBounds.x + otherBounds.width / 2;
 
-    const otherTop = other.y;
-    const otherBottom = other.y + other.height;
+    const otherTop = otherBounds.y;
+    const otherBottom = otherBounds.y + otherBounds.height;
     const otherCenterY = other.y + other.height / 2;
 
     // X-axis alignment pairs: [draggedVal, otherVal, linePosition]
@@ -71,15 +74,16 @@ export function calculateMagneticSnapping(
     const newCenterX = draggedCenterX + deltaX;
 
     for (const other of otherCards) {
-      const otherLeft = other.x;
-      const otherRight = other.x + other.width;
-      const otherCenterX = other.x + other.width / 2;
+      const otherBounds = cardVisualBounds(other);
+      const otherLeft = otherBounds.x;
+      const otherRight = otherBounds.x + otherBounds.width;
+      const otherCenterX = otherBounds.x + otherBounds.width / 2;
 
       for (const val of [newLeft, newRight, newCenterX]) {
         for (const target of [otherLeft, otherRight, otherCenterX]) {
           if (Math.abs(val - target) < 1) {
-            const startY = Math.min(draggedTop + deltaY, other.y) - 20;
-            const endY = Math.max(draggedBottom + deltaY, other.y + other.height) + 20;
+            const startY = Math.min(draggedTop + deltaY, otherBounds.y) - 20;
+            const endY = Math.max(draggedBottom + deltaY, otherBounds.y + otherBounds.height) + 20;
             snapLines.push({
               type: 'vertical',
               position: target,
@@ -98,15 +102,16 @@ export function calculateMagneticSnapping(
     const newCenterY = draggedCenterY + deltaY;
 
     for (const other of otherCards) {
-      const otherTop = other.y;
-      const otherBottom = other.y + other.height;
+      const otherBounds = cardVisualBounds(other);
+      const otherTop = otherBounds.y;
+      const otherBottom = otherBounds.y + otherBounds.height;
       const otherCenterY = other.y + other.height / 2;
 
       for (const val of [newTop, newBottom, newCenterY]) {
         for (const target of [otherTop, otherBottom, otherCenterY]) {
           if (Math.abs(val - target) < 1) {
-            const startX = Math.min(draggedLeft + deltaX, other.x) - 20;
-            const endX = Math.max(draggedRight + deltaX, other.x + other.width) + 20;
+            const startX = Math.min(draggedLeft + deltaX, otherBounds.x) - 20;
+            const endX = Math.max(draggedRight + deltaX, otherBounds.x + otherBounds.width) + 20;
             snapLines.push({
               type: 'horizontal',
               position: target,

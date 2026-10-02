@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>随想便签 - 手机同步端</title>
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="theme-color" content="#1d1d1d">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body {
+      background-color: #f6f5f0;
+      color: #1d1d1d;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      touch-action: manipulation;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between">
+  <!-- Top Navigation -->
+  <header class="bg-white border-b border-black/10 px-4 py-3 sticky top-0 z-30 flex items-center justify-between">
+    <div class="flex items-center gap-2">
+      <div class="w-8 h-8 rounded-lg bg-[#1d1d1d] text-white flex items-center justify-center font-bold text-sm">
+        📥
+      </div>
+      <div>
+        <h1 class="text-sm font-bold tracking-tight">随想便签 · 同步助手</h1>
+        <p id="serverStatus" class="text-[10px] text-green-600 flex items-center gap-1 font-mono">
+          <span class="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
+          已连接电脑
+        </p>
+      </div>
+    </div>
+    <button onclick="toggleHelpModal()" class="text-xs px-2.5 py-1 rounded-full border border-black/15 bg-black/5 hover:bg-black/10 active:scale-95 transition">
+      💡 系统分享设置
+    </button>
+  </header>
+
+  <!-- Main Body Content -->
+  <main class="flex-1 p-4 max-w-md mx-auto w-full space-y-4">
+
+    <!-- Card 1: 截图与相片直传 -->
+    <div class="bg-white rounded-2xl p-4 shadow-sm border border-black/5 space-y-3">
+      <div class="flex items-center justify-between">
+        <h2 class="text-xs font-bold uppercase tracking-wider text-black/60 flex items-center gap-1.5">
+          <span>🖼️</span> 截图与图片上传
+        </h2>
+        <span class="text-[10px] text-black/40">支持多张/原图</span>
+      </div>
+
+      <div id="dropZone" onclick="document.getElementById('fileInput').click()"
+        class="border-2 border-dashed border-black/20 rounded-xl p-6 text-center cursor-pointer hover:border-black/50 transition active:scale-[0.99] bg-stone-50">
+        <div id="previewArea" class="hidden mb-3">
+          <img id="previewImg" src="" alt="Preview" class="max-h-48 mx-auto rounded-lg shadow-sm border border-black/10 object-contain">
+          <p id="previewName" class="text-[11px] text-black/60 mt-1 truncate"></p>
+        </div>
+        <div id="uploadPrompt" class="space-y-1">
+          <div class="text-3xl">📸</div>
+          <p class="text-xs font-semibold text-black/80">点击选择手机截图 / 拍照</p>
+          <p class="text-[10px] text-black/40">截屏后直接点击即可从相册选取</p>
+        </div>
+      </div>
+      <input type="file" id="fileInput" accept="image/*" class="hidden" onchange="handleFileSelected(event)">
+
+      <button id="uploadImgBtn" onclick="uploadSelectedImage()" disabled
+        class="w-full py-2.5 bg-[#1d1d1d] disabled:bg-black/20 text-white rounded-xl text-xs font-bold tracking-wide active:scale-95 transition flex items-center justify-center gap-1.5">
+        <span>🚀 同步图片到电脑看板</span>
+      </button>
+    </div>
+
+    <!-- Card 2: 剪贴板与文字/链接 -->
+    <div class="bg-white rounded-2xl p-4 shadow-sm border border-black/5 space-y-3">
+      <div class="flex items-center justify-between">
+        <h2 class="text-xs font-bold uppercase tracking-wider text-black/60 flex items-center gap-1.5">
+          <span>✍️</span> 文字 · 网页链接 · 灵感
+        </h2>
+        <button onclick="readFromClipboard()" class="text-[11px] text-blue-600 font-medium active:underline">
+          📋 粘贴剪贴板
+        </button>
+      </div>
+
+      <textarea id="textContent" rows="3" placeholder="在微信、知乎、B站复制的文章段落或网页链接，粘贴在这里..."
+        class="w-full p-3 rounded-xl border border-black/15 text-xs focus:outline-none focus:border-black transition resize-none bg-stone-50"></textarea>
+
+      <button onclick="sendTextContent()"
+        class="w-full py-2.5 bg-[#1d1d1d] text-white rounded-xl text-xs font-bold tracking-wide active:scale-95 transition flex items-center justify-center gap-1.5">
+        <span>📤 同步文字/链接到电脑</span>
+      </button>
+    </div>
+
+    <!-- Card 3: 同步历史小卡片 -->
+    <div class="bg-white rounded-2xl p-4 shadow-sm border border-black/5 space-y-2">
+      <div class="flex items-center justify-between">
+        <h2 class="text-xs font-bold uppercase tracking-wider text-black/60">
+          🕒 最近同步记录
+        </h2>
+        <button onclick="refreshHistory()" class="text-[10px] text-black/40 hover:text-black">刷新</button>
+      </div>
+      <div id="historyList" class="space-y-2 max-h-48 overflow-y-auto text-xs text-black/70">
+        <div class="text-center py-4 text-black/40 text-[11px]">暂无最近同步</div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Toast Notification -->
+  <div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 bg-[#1d1d1d] text-white text-xs px-4 py-2.5 rounded-full shadow-lg opacity-0 pointer-events-none transition duration-300 z-50 flex items-center gap-2">
+    <span id="toastMsg">已同步至电脑！</span>
+  </div>
+
+  <!-- Help Modal: How to add to System Share Sheet -->
+  <div id="helpModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 hidden flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div class="bg-white w-full max-w-md rounded-t-3xl sm:rounded-2xl p-6 space-y-4 max-h-[85vh] overflow-y-auto">
+      <div class="flex justify-between items-center border-b border-black/10 pb-3">
+        <h3 class="font-bold text-sm">📲 怎么在手机系统分享里直接调用？</h3>
+        <button onclick="toggleHelpModal()" class="text-black/40 hover:text-black text-lg">&times;</button>
+      </div>
+
+      <div class="space-y-3 text-xs leading-relaxed text-black/80">
+        <div class="p-3 bg-stone-100 rounded-xl space-y-1">
+          <p class="font-bold text-black">🤖 安卓 (Android) 用户：</p>
+          <p>1. 用手机 Chrome 或系统浏览器打开此页面。</p>
+          <p>2. 点击浏览器右上角菜单 <strong>“⋮”</strong> -> 选择 <strong>“添加到主屏幕”</strong> 或 <strong>“安装应用”</strong>。</p>
+          <p>3. 安装后，在手机相册、微信或浏览器中点击任何“系统分享”，在列表中就能直接看到 <strong>“便签同步”</strong> 图标，一键秒传！</p>
+        </div>
+
+        <div class="p-3 bg-stone-100 rounded-xl space-y-1">
+          <p class="font-bold text-black">🍎 苹果 (iPhone) 用户：</p>
+          <p>1. 打开 iPhone 自带的 <strong>“快捷指令 (Shortcuts)”</strong>。</p>
+          <p>2. 新建一个指令：接收“图像、文本、链接”，并在“共享表单中显示”。</p>
+          <p>3. 添加动作：“获取 URL 内容”，方法选 <code>POST</code>，地址填：<code id="apiAddressCode" class="bg-black/10 px-1 py-0.5 rounded font-mono">http://电脑IP:8088/api/share</code>。</p>
+          <p>4. 以后截图后直接点分享 -> 快捷指令，自动发送到电脑！</p>
+        </div>
+      </div>
+
+      <button onclick="toggleHelpModal()" class="w-full py-2.5 bg-[#1d1d1d] text-white rounded-xl text-xs font-bold">
+        我知道了
+      </button>
+    </div>
+  </div>
+
+  <script>
+    let selectedFile = null;
+
+    function showToast(msg, isSuccess = true) {
+      const toast = document.getElementById('toast');
+      const toastMsg = document.getElementById('toastMsg');
+      toastMsg.innerText = (isSuccess ? '✅ ' : '⚠️ ') + msg;
+      toast.style.opacity = '1';
+      setTimeout(() => {
+        toast.style.opacity = '0';
+      }, 2500);
+    }
+
+    function toggleHelpModal() {
+      const modal = document.getElementById('helpModal');
+      modal.classList.toggle('hidden');
+    }
+
+    function handleFileSelected(e) {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      selectedFile = file;
+
+      const previewArea = document.getElementById('previewArea');
+      const previewImg = document.getElementById('previewImg');
+      const previewName = document.getElementById('previewName');
+      const uploadPrompt = document.getElementById('uploadPrompt');
+      const uploadBtn = document.getElementById('uploadImgBtn');
+
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        previewImg.src = ev.target.result;
+        previewName.innerText = file.name + ` (${Math.round(file.size / 1024)} KB)`;
+        previewArea.classList.remove('hidden');
+        uploadPrompt.classList.add('hidden');
+        uploadBtn.disabled = false;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    async function uploadSelectedImage() {
+      if (!selectedFile) return;
+      const btn = document.getElementById('uploadImgBtn');
+      btn.disabled = true;
+      btn.innerHTML = `<span class="inline-block animate-spin mr-1">⏳</span> 正在上传同步...`;
+
+      try {
+        const formData = new FormData();
+        formData.append('file', selectedFile);
+        formData.append('title', selectedFile.name);
+
+        const res = await fetch('/api/share', {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (res.ok) {
+          showToast('截图已同步到电脑看板！');
+          resetImageUpload();
+          refreshHistory();
+        } else {
+          showToast('上传失败，请检查网络', false);
+        }
+      } catch (err) {
+        showToast('网络连接中断', false);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = `<span>🚀 同步图片到电脑看板</span>`;
+      }
+    }
+
+    function resetImageUpload() {
+      selectedFile = null;
+      document.getElementById('fileInput').value = '';
+      document.getElementById('previewArea').classList.add('hidden');
+      document.getElementById('uploadPrompt').classList.remove('hidden');
+      document.getElementById('uploadImgBtn').disabled = true;
+    }
+
+    async function readFromClipboard() {
+      try {
+        if (navigator.clipboard && navigator.clipboard.readText) {
+          const text = await navigator.clipboard.readText();
+          if (text) {
+            document.getElementById('textContent').value = text;
+            showToast('已从剪贴板读取');
+            return;
+          }
+        }
+        showToast('请直接在输入框长按粘贴', false);
+      } catch (err) {
+        showToast('无法自动访问剪贴板，请长按手动粘贴', false);
+      }
+    }
+
+    async function sendTextContent() {
+      const text = document.getElementById('textContent').value.trim();
+      if (!text) {
+        showToast('请输入或粘贴内容', false);
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/share', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text }),
+        });
+
+        if (res.ok) {
+          showToast('已同步文字到电脑看板！');
+          document.getElementById('textContent').value = '';
+          refreshHistory();
+        } else {
+          showToast('同步失败，请重试', false);
+        }
+      } catch (err) {
+        showToast('网络连接错误', false);
+      }
+    }
+
+    async function refreshHistory() {
+      try {
+        const res = await fetch('/api/items');
+        if (res.ok) {
+          const data = await res.json();
+          renderHistory(data.items || []);
+        }
+      } catch (err) {}
+    }
+
+    function renderHistory(items) {
+      const container = document.getElementById('historyList');
+      if (!items.length) {
+        container.innerHTML = `<div class="text-center py-4 text-black/40 text-[11px]">暂无同步记录</div>`;
+        return;
+      }
+
+      container.innerHTML = items.slice(0, 5).map(item => {
+        const isImg = item.type === 'image';
+        return `
+          <div class="p-2.5 bg-stone-50 rounded-xl border border-black/5 flex items-center justify-between gap-3">
+            <div class="flex items-center gap-2.5 min-w-0">
+              ${isImg ? `
+                <img src="${item.url_path}" class="w-10 h-10 rounded-lg object-cover border border-black/10 flex-shrink-0" />
+              ` : `
+                <div class="w-10 h-10 rounded-lg bg-black/5 flex items-center justify-center text-sm flex-shrink-0">
+                  ${item.type === 'web' ? '🌐' : '📝'}
+                </div>
+              `}
+              <div class="min-w-0">
+                <p class="font-medium text-xs truncate text-black/90">${item.title || item.text || '无标题'}</p>
+                <p class="text-[10px] text-black/40 font-mono">${item.timestamp} · ${item.consumed ? '已放入画布' : '待放入'}</p>
+              </div>
+            </div>
+            <span class="text-[10px] px-2 py-0.5 rounded-full ${item.consumed ? 'bg-black/10 text-black/60' : 'bg-green-100 text-green-700 font-semibold'} flex-shrink-0">
+              ${item.consumed ? '已用' : '在待办箱'}
+            </span>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // Initialize info
+    async function initInfo() {
+      try {
+        const res = await fetch('/api/lan-info');
+        if (res.ok) {
+          const info = await res.json();
+          document.getElementById('apiAddressCode').innerText = `http://${info.primary_ip}:${info.port}/api/share`;
+        }
+      } catch (err) {}
+      refreshHistory();
+    }
+
+    initInfo();
+  </script>
+</body>
+</html>

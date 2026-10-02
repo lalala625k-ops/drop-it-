@@ -1,14 +1,15 @@
 # ==============================================================================
 # RULE ID: G-001 | Generic OpenGraph & Headless Screenshot Fallback
-# STATUS: 🌐 DYNAMIC FALLBACK
+# STATUS: 🌐 LOCKED GENERIC BASELINE (site-specific exceptions run first)
 # ==============================================================================
 
 from typing import Optional
+import ipaddress
 from urllib.parse import urljoin, urlparse
 import requests
 from bs4 import BeautifulSoup
 from backend.services.scrapers.base import BaseScraper, ScrapedMetadata
-from backend.services.screenshot_service import capture_screenshot_fallback, is_auth_url
+from backend.services.screenshot_service import capture_screenshot_fallback, detect_local_proxy, is_auth_url
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -26,7 +27,14 @@ class GenericFallbackScraper(BaseScraper):
 
     def scrape(self, url: str) -> Optional[ScrapedMetadata]:
         try:
-            resp = requests.get(url, headers=HEADERS, timeout=8, allow_redirects=True)
+            hostname = urlparse(url).hostname or ""
+            try:
+                is_local = not ipaddress.ip_address(hostname).is_global
+            except ValueError:
+                is_local = hostname == "localhost" or hostname.endswith(".local")
+            proxy = None if is_local else detect_local_proxy()
+            proxies = {"http": proxy, "https": proxy} if proxy else None
+            resp = requests.get(url, headers=HEADERS, proxies=proxies, timeout=8, allow_redirects=True)
             resp.encoding = resp.apparent_encoding or "utf-8"
             html = resp.text
             soup = BeautifulSoup(html, "html.parser")

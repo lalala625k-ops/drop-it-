@@ -15,14 +15,13 @@ export const SnapGuides: React.FC<SnapGuidesProps> = ({ lines }) => {
           return (
             <div
               key={`snap-v-${idx}`}
-              className="absolute pointer-events-none bg-blue-400"
+              className="absolute pointer-events-none bg-ink/40"
               style={{
                 left: `${line.position}px`,
                 top: `${line.start}px`,
                 width: '1px',
                 height: `${line.end - line.start}px`,
                 zIndex: 9998,
-                boxShadow: '0 0 6px rgba(59, 130, 246, 0.8)',
               }}
             />
           );
@@ -30,14 +29,13 @@ export const SnapGuides: React.FC<SnapGuidesProps> = ({ lines }) => {
           return (
             <div
               key={`snap-h-${idx}`}
-              className="absolute pointer-events-none bg-blue-400"
+              className="absolute pointer-events-none bg-ink/40"
               style={{
                 left: `${line.start}px`,
                 top: `${line.position}px`,
                 width: `${line.end - line.start}px`,
                 height: '1px',
                 zIndex: 9998,
-                boxShadow: '0 0 6px rgba(59, 130, 246, 0.8)',
               }}
             />
           );
