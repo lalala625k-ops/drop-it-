@@ -460,8 +460,6 @@ export default function App() {
         e.preventDefault();
       }}
     >
-      {new URLSearchParams(window.location.search).has('desktop') &&
-        <div className="desktop-drag-region absolute left-0 right-[140px] top-0 h-9 z-[60]" aria-hidden="true" />}
       {farMode && <FarCanvas cards={visibleCards} groups={visibleGroups} viewport={viewport} />}
       <div
         data-canvas-surface

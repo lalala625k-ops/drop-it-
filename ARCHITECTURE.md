@@ -2,7 +2,7 @@
 
 > **同步日期**：2026-10-02。本文说明当前工作区的结构、职责和数据流；产品行为见 `product_requirements_document.md`，视觉规则见 `DESIGN_SPEC.md`，站点保护范围见 `image_parsing_rules.md`。已知实现限制应明确记录，不能把计划能力写成已经实现。
 
-> **桌面版增量**：`desktop/` 包含 Electron 主进程与 Windows 安装配置；`build_desktop.ps1` 打包前端、FastAPI 可执行文件和安装包。Windows 运行数据位于 `%LOCALAPPDATA%/InfiniteCanvasNote/data`，`backend/services/storage.py` 用 SQLite WAL 和修订号保存对象，旧 `backend/data` 首次复制迁移。`backend/routes/migration.py` 接收原浏览器中的待同步数据与视口。`frontend/src/utils/storage.ts` 按对象提交并阻止过期修订号覆盖；`useVirtualViewport.ts` 使用空间索引，远景可由 `FarCanvas.tsx` 绘制简化卡片。使用方式与限制见 `DESKTOP.md`。
+> **桌面版隔离**：桌面壳、打包脚本和使用说明保留在独立的 `codex/desktop-app` 分支与 `C:/Users/lalala/.codex/worktrees/desktop-app/note` 检出目录；网页版主目录不再包含这些专用文件。后续网页版提交不会自动进入桌面分支，待网页版稳定后再移植。两版现有运行数据仍可共用 `%LOCALAPPDATA%/InfiniteCanvasNote/data`；`backend/services/storage.py` 使用 SQLite WAL 和修订号，`backend/routes/migration.py` 接收旧浏览器数据。画布视口裁剪使用空间索引，远景大量对象由 `FarCanvas.tsx` 简化绘制。
 
 ## 1. 架构与维护原则
 

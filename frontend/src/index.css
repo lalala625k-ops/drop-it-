@@ -39,5 +39,3 @@ body {
 textarea[data-text-editor]:not(:focus)::selection {
   background: transparent;
 }
-/* Invisible drag surface for the desktop window; the canvas remains visible beneath it. */
-.desktop-drag-region { -webkit-app-region: drag; }
