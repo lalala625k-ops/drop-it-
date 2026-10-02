@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, shell } = require('electron');
+const { app, BrowserWindow, Menu, dialog, shell } = require('electron');
 const { spawn } = require('node:child_process');
 const { createServer } = require('node:http');
 const { randomBytes } = require('node:crypto');
@@ -63,7 +63,10 @@ function startBrowserBridge() {
 
 async function createWindow() {
   const window = new BrowserWindow({
-    width: 1440, height: 900, backgroundColor: '#f7f7f5',
+    width: 1440, height: 900, backgroundColor: '#d6d3cb',
+    autoHideMenuBar: true,
+    titleBarStyle: 'hidden',
+    titleBarOverlay: { color: '#d6d3cb', symbolColor: '#1d1d1d', height: 36 },
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
   window.webContents.setWindowOpenHandler(({ url }) => {
@@ -76,11 +79,12 @@ async function createWindow() {
       if (/^https?:\/\//.test(url)) shell.openExternal(url);
     }
   });
-  await window.loadURL('http://127.0.0.1:8000/');
+  await window.loadURL('http://127.0.0.1:8000/?desktop=1');
 }
 
 app.whenReady().then(async () => {
   if (!app.requestSingleInstanceLock()) { app.quit(); return; }
+  Menu.setApplicationMenu(null);
   try {
     const alreadyRunning = await health();
     const token = randomBytes(24).toString('hex');

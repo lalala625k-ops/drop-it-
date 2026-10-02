@@ -7,6 +7,7 @@ node_modules/
 dist/
 build/
 release/
+release-borderless/
 *.spec
 
 # Python cache & virtual environments

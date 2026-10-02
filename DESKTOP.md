@@ -4,6 +4,8 @@
 
 在 Windows 上安装 `backend/requirements-desktop.txt` 与 `desktop/package.json` 中的依赖，然后从仓库根目录运行 `powershell -ExecutionPolicy Bypass -File build_desktop.ps1`。安装包输出到 `release/`。开发时先运行 `npm run build`（位于 `frontend/`），再在 `desktop/` 运行 `npm start`。
 
+桌面窗口隐藏默认菜单和白色系统标题栏，画布延伸到顶部；右上角保留原生窗口按钮。顶部左侧一小段透明区域可拖动窗口。重新打包 `release/win-unpacked` 前需关闭正在运行的免安装预览版，否则 Windows 会锁定其文件。
+
 桌面版启动本机 FastAPI 服务并打开 `http://127.0.0.1:8000/`；同一电脑的浏览器可打开此地址使用同一份数据。运行数据位于 `%LOCALAPPDATA%\InfiniteCanvasNote\data`。首次启动会将旧 `backend/data/cards.json`、`assets/` 和 `screenshots/` 复制到该目录，并保留 `migration-backup/`。
 
 首次启动还会在原浏览器打开 `http://localhost:5173/` 的迁移页。请使用原来保存便签的浏览器配置，点击“迁移到桌面版”，以带走尚未同步的便签、IndexedDB 图片和视口。迁移页完成后返回桌面应用。若原网页曾使用 `127.0.0.1:5173` 等不同地址，需用原地址打开带相同 `migrate` 参数的页面；浏览器存储按地址隔离。
