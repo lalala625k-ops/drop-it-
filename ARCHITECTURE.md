@@ -20,11 +20,14 @@
 | `DESIGN_SPEC.md` | 默认视觉规则、主题色、标题字阶及实现差异 |
 | `image_parsing_rules.md` | 保护库、试验库、通用解析规则及迁移流程 |
 | `run_app.bat` | 启动 Vite（5173）和 Uvicorn（127.0.0.1:8000），打开浏览器 |
+| `open_site.bat`、`local_site.pyw` | 无控制台的本机使用入口；后台由 FastAPI 在 127.0.0.1:5173 同时提供构建好的网页与 API，关闭 Codex 或浏览器后服务继续运行；需先生成 `frontend/dist` |
+| `LOCAL_USE.md` | 发布前本机使用、构建更新及故障排查说明 |
 | `backup_database.bat` | 从 SQLite 导出一致的 JSON 和资源到 `backend/data/` 独立 Git 仓库，再提交、拉取并推送 `origin/main` |
 | `.gitignore` | 忽略依赖、构建输出、Python 缓存及独立管理的 `backend/data/` |
+| `.reverse-image.local.json` | 本机反向识别视觉模型凭据与接口配置；Git 忽略，不随代码提交 |
 | `.agents/`、`skills/` | 项目工作流技能与参考材料，包括代码精简技能 |
 | `frontend/package.json` | 依赖；`dev`、`build`（tsc + Vite）、`preview` 命令 |
-| `frontend/vite.config.ts` | 5173 开发端口；`/api` 代理到后端 8000；单独启动 Vite 时尝试启动缺失的本地后端 |
+| `frontend/vite.config.ts` | 5173 开发端口；`/api` 代理到后端 8002；单独启动 Vite 时尝试启动缺失的本地后端。`run_app.bat` 仍另行启动 8000，两个启动配置目前不一致 |
 | `frontend/tsconfig.json` | TypeScript 编译配置 |
 | `frontend/tailwind.config.js` | 颜色、字体、字距和圆角 token |
 | `frontend/postcss.config.js` | Tailwind 与 Autoprefixer 插件配置 |
@@ -62,7 +65,10 @@
 | `storage.ts` | 引导卡片、立即写入带待同步标记的 LocalStorage、400ms 防抖及按对象修订号同步、刷新恢复、JSON 导入导出 |
 | `pendingImages.ts` | 在 IndexedDB 按卡片 ID 暂存原始图片，刷新时恢复因 LocalStorage 容量限制剥离的 Base64 图片 |
 | `ingestScreenshot.ts` | 粘贴/拖入图片时立即建卡并暂存原图，异步上传成功后换成持久资源地址；原图等待用户从右键菜单选择识别方式 |
-| `recognizeCardImage.ts` | 图片卡右键 OCR/原链接识别请求及转换字段；原链接未命中时保留图片 |
+| `recognizeCardImage.ts` | 图片卡右键 OCR/原链接识别请求及转换字段；收集接口阶段记录，原链接未命中时保留图片 |
+| `manualSearch.ts` | 前端手动搜索链接兜底 |
+
+`components/RecognitionDiagnostics.tsx` 和 `components/ReverseResolutionPanel.tsx` 分别显示本次页面内的右侧诊断记录，以及图片卡旁的候选、阶段结果和手动搜索面板；关闭面板不改卡片。
 
 ### 3.3 状态与交互层（`hooks/`）
 
@@ -124,8 +130,14 @@
 | `routes/parser.py` | POST `/api/recognize-image` 和 `/api/resolve-image` 支持上传文件、Base64 JSON、原始请求体；GET `/api/fetch-metadata` |
 | `services/storage.py` | SQLite WAL 对象存储、修订号校验、旧 JSON 迁移及 Git 快照导出 |
 | `services/ocr_service.py` | RapidOCR 初始化、Pillow 预处理、首行标题和全文；不可用或出错时返回失败结果 |
-| `services/screenshot_link_service.py` | 从 OCR 文本提取 B 站/X 直接链接或 BV 号，并保守校验网页搜索结果 |
-| `services/bilibili_reverse_service.py` | 按 OCR 坐标分别提取电脑端截图和手机竖屏截图的标题、UP 主及可见时长；通过 B 站视频搜索、综合搜索回退、失败页重试和进程内已核实结果缓存查找候选，再按标题/作者/时长评分；与受保护的正向解析器独立 |
+| `services/screenshot_link_service.py` | 保留从 OCR 文本提取 B 站/X 直接链接或 BV 号的兼容函数；原有文字搜索不再进入主溯源链路 |
+| `services/bilibili_reverse_service.py` | 保留 OCR 几何提取与 B 站官方备用搜索接口；反向搜索与受保护的正向解析器独立 |
+| `services/reverse_direct_service.py`、`reverse_resolution_search.py` | 提取截图中明确可见的链接/编号；按 AI 标准化字段执行站内和目标域名搜索，过滤搜索页、排序候选并区分自动命中与待确认 |
+| `services/reverse_qr_service.py`、`reverse_vision_service.py`、`reverse_vision_prompts.py` | 二维码预检；从环境变量或本机忽略配置读取 Key，优先按参考项目的 Gemini 或 Qwen 视觉提示词提取站点、标题、作者与检索指纹；模型输出仅作线索，不直接作为原链接 |
+| `services/reverse_instagram_caption.py`、`reverse_site_fingerprints.py` | Instagram 无独立标题时从 OCR 正文提取检索词；Matrix 少数派页面的强特征在模型误判后纠正平台与域名 |
+| `services/reverse_manual_search.py`、`reverse_trace.py` | 构造只含标题或 Instagram OCR 正文的人工搜索入口；记录阶段、HTTP 状态和安全化后的接口地址，不记录密钥 |
+| `services/reverse_layout_service.py`、`reverse_search_service.py`、`reverse_platform_service.py` | 保留参考项目的 OCR 布局与旧搜索帮助函数；主链路复用平台域名、内容页校验以及微信/少数派专用查找，不再以 OCR 标题替代失败的 AI 结果 |
+| `services/reverse_platforms/`、`reverse_platform_adapter.py` | 独立移植参考项目的 11 个平台解析器和 155 站点映射；适配层按平台调用并过滤搜索页等非原文结果 |
 | `services/scraper_service.py` | 兼容导出层，转出解析入口、注册表及截图帮助函数 |
 | `services/screenshot_service.py` | 鉴权页识别、代理探测、无头浏览器截图与缓存 |
 | `services/scrapers/__init__.py` | 对外提供 `scrape_url_metadata` 和注册表 |
@@ -139,8 +151,9 @@
 | `services/scrapers/protected/pinterest.py` | P-004：Pinterest 元数据与原图路径尝试 |
 | `services/scrapers/protected/x_twitter.py` | P-005：FxTwitter 元数据及 Twitterbot SSR 回退 |
 | `services/scrapers/protected/shens_blog.py` | P-007：Shen’s Blog 页面的标题和封面元数据 |
-| `services/scrapers/experimental/__init__.py` | 注册飞书试验解析器 |
+| `services/scrapers/experimental/__init__.py` | 注册飞书和 Medium 试验解析器 |
 | `services/scrapers/experimental/feishu.py` | E-001：飞书/Lark 文档标题识别，统一返回无封面信息卡 |
+| `services/scrapers/experimental/medium.py` | E-002：读取 Medium 文章元数据；访问受阻时从 URL 生成标题并保留无封面信息卡 |
 | `tests/test_protected_scrapers.py` | 保护状态、URL 匹配、注册列表等断言；线上有效性仍需真实 URL 验证 |
 | `data/cards.json` | 旧版数据与独立 Git 备份快照；Windows 运行数据位于 `%LOCALAPPDATA%/InfiniteCanvasNote/data/board.sqlite3` |
 | `data/assets/` | 上传图片二进制文件 |
@@ -150,7 +163,7 @@
 
 1. **加载**：未同步的本地变更优先恢复，否则读取后端非空数据；失败或为空时读取本地缓存，再降级到引导卡片。启动时规范化树连接和圆形父物体尺寸，外层 Group 保留原尺寸与收起状态；视口单独恢复。
 2. **保存**：卡片及父物体拖动松手调用 `commitState`；外层 Group 操作调用 `saveStateDebounced`；立即写入带待同步标记的本地数据，400ms 防抖后异步 POST 变更对象。后端比较基础修订号，过期写入返回 409；本地副本保留并提示用户手工处理冲突。当前没有自动合并或跨设备同步。
-3. **图片**：粘贴/拖入先在 IndexedDB 暂存并创建 Base64 图片卡，再异步上传，成功后换成 URL；后端断开时保留本地图片。图片右键菜单选择 OCR 时转文本；选择恢复 B 站/X 原链接时，命中则转网页卡，未命中则保留原图并提示。本地写入失败时仍会尝试剥离超过 50,000 字符的 Base64 图片，加载时从 IndexedDB 补回。
+3. **图片**：粘贴/拖入先在 IndexedDB 暂存并创建 Base64 图片卡，再异步上传，成功后换成 URL；后端断开时保留本地图片。右键 OCR 转文本；识别原链接先检查二维码和 OCR 中的明确网址/编号，未命中时调用已配置的视觉模型提取平台、标题和作者，再按站内搜索→目标域名定向搜索核验具体内容页。模型未配置或失败即停止，不以 OCR 标题代替。Instagram 无标题时用 OCR 正文作为检索词；少数派 Matrix 强特征可纠正模型误判。高可信结果自动转换，相似候选在卡片旁待用户确认。未取得链接时保留原图，结果面板和最近 20 次诊断为前端临时状态。本地写入失败时仍会尝试剥离超过 50,000 字符的 Base64 图片，加载时从 IndexedDB 补回。
 4. **设置**：`pinboard_viewport_v1` 仅存浏览器，不包含在后端数据及 JSON 导出中。画布和主画布卡片使用固定配色；Group/父物体的 `color` 随 `groups` 写入本地、后端和 JSON 备份，旧卡片颜色字段保留兼容但不参与主画布卡片绘制。
 5. **备份**：JSON 导出 `{cards, groups}`，保留现有 `image` 值（URL 或 Base64），不打包 URL 指向文件。迁移须另带 `assets/`、`screenshots/`；远程图片仍依赖原站。
 6. **字段联动**：修改前端类型时同时考虑后端模型、新建/更新、复制、导入导出及历史快照。复制对象时重映射快照内部 `groupId`、`bundleId` 和 Group 的 `parentIds`；未复制的外层 Group 不承接新卡片。`isParsing` 为前端临时字段，后端不保存。树状关系由独立卡片的 `groupId`、Group 的 `parentIds[0]` 与成员卡片的 `bundleId` 共同确定；打组时会清除成员原有的单独上级连接，脱组时成员和下级分支改接原 Group 的上级。

@@ -2,8 +2,7 @@ import React from 'react';
 import { Card, Group } from '../types';
 import { bundleCollapsedHeight, bundleCollapsedWidth, bundleOutline, bundleOutlinePoints, bundleResizeHandles, BundleResizeCorner } from '../hooks/useBundleGroups';
 import { parseMarkdownHeading } from '../utils/headingUtils';
-import { isFeishuUrl } from '../utils/feishu';
-import { FeishuLogo } from './FeishuLogo';
+import { SiteLogo } from './SiteLogo';
 
 interface Props {
   group: Group;
@@ -17,19 +16,8 @@ interface Props {
 }
 
 const MemberIcon: React.FC<{ card: Card }> = ({ card }) => {
-  const [iconIndex, setIconIndex] = React.useState(0);
-  const icons = card.favicon ? [card.favicon] : [];
-  if (card.type === 'web' && isFeishuUrl(card.url)) return <FeishuLogo className="w-4 h-4" />;
-  if (card.type === 'web' && card.url) {
-    try {
-      const siteIcon = new URL('/favicon.ico', card.url).href;
-      if (!icons.includes(siteIcon)) icons.push(siteIcon);
-    } catch { /* Invalid URL: use the generic icon. */ }
-  }
-  if (card.type === 'web' && icons[iconIndex]) {
-    return <img src={icons[iconIndex]} alt="" className="w-4 h-4 shrink-0 object-contain" referrerPolicy="no-referrer" onError={() => setIconIndex((index) => index + 1)} />;
-  }
-  return <span className="w-4 h-4 shrink-0 text-center text-xs leading-4" aria-hidden="true">{card.type === 'web' ? '🌐' : card.type === 'image' ? '▧' : '▤'}</span>;
+  if (card.type === 'web') return <SiteLogo url={card.url} favicon={card.favicon} className="w-4 h-4" />;
+  return <span className="w-4 h-4 shrink-0 text-center text-xs leading-4" aria-hidden="true">{card.type === 'image' ? '▧' : '▤'}</span>;
 };
 
 const memberTitle = (card: Card) => {

@@ -55,15 +55,21 @@ def _matches_ocr(phrase: str, result_text: str) -> bool:
     return match.size >= 12 and match.size >= min(20, round(len(needle) * 0.6))
 
 
-def recover_screenshot_link(text: str, ocr: dict | None = None) -> str | None:
-    # Explicit identifiers are stronger evidence than search results.
+def recover_visible_link(text: str) -> str | None:
+    """Return only links and BV identifiers printed in the screenshot."""
     for match in re.finditer(r"(?:https?://)?(?:www\.|mobile\.)?(?:bilibili\.com|b23\.tv|x\.com|twitter\.com)/[^\s]+", text, re.IGNORECASE):
         link = _canonical_link(match.group(0))
         if link:
             return link
     bv = BV_ID.search(text)
-    if bv:
-        return f"https://www.bilibili.com/video/{bv.group(0)}"
+    return f"https://www.bilibili.com/video/{bv.group(0)}" if bv else None
+
+
+def recover_screenshot_link(text: str, ocr: dict | None = None) -> str | None:
+    # Explicit identifiers are stronger evidence than search results.
+    direct = recover_visible_link(text)
+    if direct:
+        return direct
 
     if ocr and re.search(r"bilibili|哔哩|大会员|弹幕", text, re.IGNORECASE):
         return recover_bilibili_video(ocr)

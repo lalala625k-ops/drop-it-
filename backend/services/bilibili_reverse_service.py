@@ -2,11 +2,11 @@
 
 import html
 import re
-import time
 from difflib import SequenceMatcher
 from typing import Any
 
 import requests
+from backend.services.reverse_trace import record
 from bs4 import BeautifulSoup
 
 from backend.services.screenshot_service import detect_local_proxy
@@ -125,31 +125,31 @@ def _candidate_score(item: dict[str, Any], title: str, author: str, duration: in
 
 def _search_page(query: str, page: int, headers: dict[str, str], proxies: dict[str, str] | None,
                  order: str | None = "pubdate") -> dict[str, Any] | None:
-    for attempt in range(2):
-        for url in SEARCH_URLS:
-            try:
-                params = {"keyword": query, "page": page}
-                if "/search/type" in url:
-                    params["search_type"] = "video"
-                if order:
-                    params["order"] = order
-                response = requests.get(url, params=params,
-                                        headers=headers, proxies=proxies, timeout=6)
-                if response.status_code != 200:
-                    continue
-                payload = response.json()
-                if payload.get("code") == 0:
-                    data = payload.get("data") or {}
-                    if "v_voucher" not in data:
-                        if isinstance(data.get("result"), list) and data["result"] and "result_type" in data["result"][0]:
-                            videos = next((group.get("data") or [] for group in data["result"]
-                                           if group.get("result_type") == "video"), [])
-                            return {"result": videos, "numPages": data.get("numPages", 6)}
-                        return data
-            except (requests.RequestException, ValueError, TypeError):
-                pass
-        if attempt == 0:
-            time.sleep(0.3)
+    # A failed endpoint must not multiply into minutes of retries per page.
+    for url in SEARCH_URLS[:2]:
+        try:
+            params = {"keyword": query, "page": page}
+            if "/search/type" in url:
+                params["search_type"] = "video"
+            if order:
+                params["order"] = order
+            response = requests.get(url, params=params,
+                                    headers=headers, proxies=proxies, timeout=4)
+            record('site_request', 'completed' if response.ok else 'failed', f'B 站备用搜索：{query[:80]}', url, response.status_code)
+            if response.status_code != 200:
+                continue
+            payload = response.json()
+            if payload.get("code") == 0:
+                data = payload.get("data") or {}
+                if "v_voucher" not in data:
+                    if isinstance(data.get("result"), list) and data["result"] and "result_type" in data["result"][0]:
+                        videos = next((group.get("data") or [] for group in data["result"]
+                                       if group.get("result_type") == "video"), [])
+                        return {"result": videos, "numPages": data.get("numPages", 2)}
+                    return data
+        except (requests.RequestException, ValueError, TypeError):
+            record('site_request', 'failed', f'B 站备用搜索异常：{query[:80]}', url)
+            continue
     return None
 
 
@@ -163,24 +163,20 @@ def recover_bilibili_video(ocr: dict[str, Any]) -> str | None:
         return _verified_links[cache_key]
     mobile = ocr.get("height", 0) > ocr.get("width", 0) * 1.3
     distinctive = re.search(r"[A-Za-z][A-Za-z0-9]{5,29}", title)
-    queries = ([(distinctive.group(0), None), (title[-16:], None), (author, None)]
+    queries = ([(distinctive.group(0), None), (title[:24], None)]
                if mobile and distinctive else
-               [(title[-16:], None), (author, None)] if mobile else
-               [(author or title[-14:], "pubdate")])
+               [(title[:24], None), (title[-16:], None)])
     proxy = detect_local_proxy()
     proxies = {"http": proxy, "https": proxy} if proxy else None
     headers = {"User-Agent": "Mozilla/5.0", "Referer": "https://www.bilibili.com/"}
     best: tuple[float, str] = (0.0, "")
-    failed_pages: list[tuple[str, int, str | None]] = []
-
     for query, order in queries:
         if not query:
             continue
-        for page in range(1, 7 if not mobile else 4):
+        for page in range(1, 3):
             data = _search_page(query, page, headers, proxies, order)
             if data is None:
-                failed_pages.append((query, page, order))
-                continue
+                break
             for item in data.get("result") or []:
                 bvid = str(item.get("bvid") or "")
                 if not BVID.fullmatch(bvid):
@@ -188,27 +184,10 @@ def recover_bilibili_video(ocr: dict[str, Any]) -> str | None:
                 score = _candidate_score(item, title, author, duration)
                 if score > best[0]:
                     best = score, bvid
-            if best[0] >= 1.0 or page >= data.get("numPages", 6):
+            if best[0] >= 1.0 or page >= data.get("numPages", 2):
                 break
         if best[0] >= 1.0:
             break
-
-    # Bilibili intermittently returns an HTML challenge instead of JSON. Retry
-    # only pages that failed, after the first search pass has finished.
-    if best[0] < 1.0:
-        for query, page, order in failed_pages:
-            time.sleep(0.6)
-            data = _search_page(query, page, headers, proxies, order)
-            if data is None:
-                continue
-            for item in data.get("result") or []:
-                bvid = str(item.get("bvid") or "")
-                if BVID.fullmatch(bvid):
-                    score = _candidate_score(item, title, author, duration)
-                    if score > best[0]:
-                        best = score, bvid
-            if best[0] >= 1.0:
-                break
 
     if best[0] >= 1.0:
         link = f"https://www.bilibili.com/video/{best[1]}"

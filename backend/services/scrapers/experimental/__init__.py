@@ -7,7 +7,8 @@
 from typing import List
 from backend.services.scrapers.base import BaseScraper
 from backend.services.scrapers.experimental.feishu import FeishuScraper
+from backend.services.scrapers.experimental.medium import MediumScraper
 
-EXPERIMENTAL_SCRAPERS: List[BaseScraper] = [FeishuScraper()]
+EXPERIMENTAL_SCRAPERS: List[BaseScraper] = [FeishuScraper(), MediumScraper()]
 
-__all__ = ["EXPERIMENTAL_SCRAPERS", "FeishuScraper"]
+__all__ = ["EXPERIMENTAL_SCRAPERS", "FeishuScraper", "MediumScraper"]

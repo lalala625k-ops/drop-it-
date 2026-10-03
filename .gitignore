@@ -21,6 +21,8 @@ env/
 # Temporary and local data files
 *.tmp
 *.log
+*.local.json
+*.local.csv
 .DS_Store
 Thumbs.db
 
@@ -33,3 +35,6 @@ backend/data/
 
 # Local mobile inbox content
 mobile_sync_sandbox/inbox_data/
+
+# Local vendor packages
+backend/.vendor/

@@ -5,10 +5,11 @@ import { createConnection } from 'node:net';
 import { fileURLToPath } from 'node:url';
 
 const backendDirectory = fileURLToPath(new URL('..', import.meta.url));
+const backendPort = 8002;
 
 function backendAvailable(): Promise<boolean> {
   return new Promise((resolve) => {
-    const socket = createConnection({ host: '127.0.0.1', port: 8000 });
+    const socket = createConnection({ host: '127.0.0.1', port: backendPort });
     let settled = false;
     const finish = (available: boolean) => {
       if (settled) return;
@@ -30,7 +31,7 @@ export default defineConfig({
       void backendAvailable().then((available) => {
         if (available) return;
         const backend = spawn('python', ['-m', 'uvicorn', 'backend.main:app',
-          '--host', '127.0.0.1', '--port', '8000'], {
+          '--host', '127.0.0.1', '--port', String(backendPort)], {
           cwd: backendDirectory, windowsHide: true, stdio: 'ignore',
         });
         backend.once('error', (error) => server.config.logger.warn(`后端启动失败：${error.message}`));
@@ -43,9 +44,10 @@ export default defineConfig({
   }],
   server: {
     port: 5173,
+    strictPort: true,
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:8000',
+        target: `http://127.0.0.1:${backendPort}`,
         changeOrigin: true,
       },
     },

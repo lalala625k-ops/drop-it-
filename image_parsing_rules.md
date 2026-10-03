@@ -36,6 +36,7 @@
 | **P-005** | **X / Twitter** | `x.com`, `twitter.com` | 🔒 **已锁定** | 2026-10-01 (OK) | FxTwitter 开放元数据接口 + Twitterbot SSR 直扫回退 | 优先使用文章或动态自身封面，其次使用所附链接预览图；无图时保持紧凑卡片 |
 | **P-007** | **Shen’s Blog** | `shens.blog` | 🔒 **已锁定** | 2026-10-01 (OK) | 通过本地代理读取页面 OpenGraph / Twitter 元数据 | 使用文章自身 `og:image`；页面无图时不生成网站截图 |
 | **E-001** | **飞书 (Feishu / Lark)** | `feishu.cn`, `larksuite.com` | ⏳ **试验区** | 无封面信息卡 | 文档路径识别 + 公开页面标题元数据 + 鉴权降级 | 统一不解析或展示封面；标题前显示飞书图标 |
+| **E-002** | **Medium** | `medium.com` 及其子域名 | ⏳ **试验区** | 待确认 | 正常读取文章元数据；遇到 403 或拦截页时从 URL 生成标题 | 拦截时不保存网页截图或封面 |
 | **G-001** | **通用网页基础规则** | 无站点例外匹配的 HTTP(S) 链接 | 🔒 **已锁定** | 2026-10-01 (OK) | OpenGraph ➔ Twitter Cards ➔ Headless 视口截图 | 优先页面元数据图片；无图且非鉴权页时截图 |
 
 ---
@@ -121,6 +122,10 @@
 - **当前行为**：飞书/Lark 链接统一作为无封面信息卡，保留公开标题和私密文档的标题降级；标题前显示飞书图标。图片元数据不再用于封面，因此继续留在试验区。
 - **历史编号**：P-006 已撤回且不复用，避免与先前记录混淆。
 
+### ⏳ 规则 E-002: Medium
+- **试验文件**：`backend/services/scrapers/experimental/medium.py`。
+- **当前行为**：页面可访问时使用文章标题、摘要和 OpenGraph 封面；返回 403 或拦截页时保留原链接，从 URL 生成标题，并清空封面。不会把拦截页截图当作文章头图。
+
 ### 🔒 规则 P-007: Shen’s Blog
 - **保护文件**：`backend/services/scrapers/protected/shens_blog.py`
 - **适用域名**：`shens.blog` 及 `www.shens.blog`。
@@ -156,7 +161,7 @@ flowchart LR
     Step5 --> Step6[6. 登记到本文档 & 编写回归测试]
 ```
 
-迁移时还须更新 `protected/__init__.py`、`experimental/__init__.py`、回归测试以及 PRD 的站点列表。当前保护库包含 P-001～P-005、P-007 六个站点例外，试验库包含飞书 E-001；G-001 是单独锁定的通用基础规则。`registry.py` 依次调用匹配的保护库、试验库，未取得结果时使用 G-001。
+迁移时还须更新 `protected/__init__.py`、`experimental/__init__.py`、回归测试以及 PRD 的站点列表。当前保护库包含 P-001～P-005、P-007 六个站点例外，试验库包含飞书 E-001 和 Medium E-002；G-001 是单独锁定的通用基础规则。`registry.py` 依次调用匹配的保护库、试验库，未取得结果时使用 G-001。
 
 当前回归测试主要覆盖规则状态、URL 匹配及注册列表，不能代替真实网页封面和标题验证。表中的画质描述是解析策略所尝试取得的目标，受原站内容、鉴权、网络和反爬变化影响，不保证每次成功或固定分辨率。
 
@@ -164,6 +169,8 @@ flowchart LR
 
 ## 六、截图反向识别与保护库边界
 
-图片卡的“识别原链接”使用 `POST /api/resolve-image`：先 OCR，优先读取截图中明确出现的 URL/BV 号；B 站电脑端截图及手机竖屏截图再从 OCR 布局提取标题、UP 主与可见时长，经 B 站搜索候选核验后返回链接。搜索接口遇到 HTTP 412 或无结果的 `v_voucher` 时尝试备用接口与失败页重试；已核实匹配只在当前后端进程内缓存。未达到可信阈值时保留原图片卡，用户可单独选择“OCR 识别”转换成文本卡。X 截图目前使用通用文字搜索，不能保证找回原帖。
+图片卡的“识别原链接”使用 `POST /api/resolve-image`：先本地检查二维码、OCR 中明确出现的 URL/BV 号，命中时直接规范化链接。无明确线索时由已配置的视觉模型提取平台、主标题、作者等标准字段；未配置或调用失败即停止，不用 OCR 标题暗中搜索。搜索关键词不加作者，作者只用于候选核对。随后先用平台站内搜索，再用目标域名定向搜索补充；中文标题的 Bing 查询走国内入口，但 HTTP 200 不等于 `site:` 条件有效，跨站结果标记为 `site_ignored`。候选必须是具体内容页；高可信结果自动转换，相似候选由用户在图片卡旁确认。未命中时保留原图及手动搜索入口，右侧显示本次页面内最近 20 次的阶段和接口诊断；独立的“OCR 识别”仍可转换成文本卡。
 
-这条反向识别链路位于 `backend/services/bilibili_reverse_service.py` 和 `backend/services/screenshot_link_service.py`，不属于 P-001 B 站链接的正向元数据/封面解析规则。反向识别成功后，网页卡元数据仍由原有解析调度获取；P-001 与 G-001 的保护约束保持适用。
+反向链路的站点例外：YouTube 搜索沿用本地代理并逐条核验视频候选；少数派用文章 API 返回可核对的 `/post/{id}` 候选，OCR 同时出现 Matrix 首页推荐与少数派写作社区文案时纠正模型的平台误判。Instagram 无独立标题时由程序从 OCR 正文选择搜索词；未登录的站内搜索和公开主页目前不能稳定提供可读帖子列表，尚无登录后自动查帖。小红书跳过 Bing 定向补充，提供站内搜索和人工选择。
+
+这条反向识别链路主要位于 `backend/services/reverse_direct_service.py`、`backend/services/reverse_resolution_search.py`、`backend/services/reverse_instagram_caption.py`、`backend/services/reverse_site_fingerprints.py` 和 `backend/routes/parser.py`。它不属于受保护站点的正向元数据/封面解析规则；反向识别成功后，网页卡元数据仍由原有解析调度获取，P-001～P-005、P-007 与 G-001 的保护约束保持适用。

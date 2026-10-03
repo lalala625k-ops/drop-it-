@@ -1,9 +1,11 @@
 import { useState, useRef, useCallback, MutableRefObject } from 'react';
 import { Card, Group } from '../types';
 import { saveStateDebounced } from '../utils/storage';
-import { recognizeCardImage, ImageRecognitionMode } from '../utils/recognizeCardImage';
+import { buildLinkCardUpdates, recognizeCardImage, ImageRecognitionMode,
+  ReverseResolution, RecognitionReport } from '../utils/recognizeCardImage';
 import { bundleBounds } from './useBundleGroups';
 import { isFeishuUrl, FEISHU_LOGO_URLS } from '../utils/feishu';
+import { manualSearchFallback } from '../utils/manualSearch';
 
 export interface ActivePieMenuState {
   target: { kind: 'card'; card: Card } | { kind: 'bundle' | 'parent'; group: Group };
@@ -19,6 +21,7 @@ interface UsePieMenuStateProps {
   setGroups: React.Dispatch<React.SetStateAction<Group[]>>;
   pushHistory: (cards: Card[], groups: Group[]) => void;
   showToast: (msg: string) => void;
+  onRecognitionReport?: (report: RecognitionReport) => void;
 }
 
 export function usePieMenuState({
@@ -28,10 +31,14 @@ export function usePieMenuState({
   setGroups,
   pushHistory,
   showToast,
+  onRecognitionReport,
 }: UsePieMenuStateProps) {
   const [activePieMenu, setActivePieMenu] = useState<ActivePieMenuState | null>(null);
   const reparsingIdsRef = useRef<Set<string>>(new Set());
   const recognizingIdsRef = useRef<Set<string>>(new Set());
+  const [resolutionPanel, setResolutionPanel] = useState<{
+    cardId: string; resolution: ReverseResolution; text: string;
+  } | null>(null);
 
   const openPieMenu = useCallback((card: Card, clientX: number, clientY: number) => {
     setActivePieMenu({
@@ -178,6 +185,8 @@ export function usePieMenuState({
       const metadata = await response.json();
       const title = typeof metadata.title === 'string' && metadata.title.trim() !== card.url ? metadata.title.trim() : '';
       const feishu = isFeishuUrl(card.url);
+      const hostname = new URL(card.url).hostname.toLowerCase();
+      const medium = hostname === 'medium.com' || hostname.endsWith('.medium.com');
       const imageUrl = !feishu && typeof metadata.image === 'string' ? metadata.image.trim() : '';
       if (!title && !imageUrl) throw new Error('未取得标题或头图');
 
@@ -208,7 +217,7 @@ export function usePieMenuState({
           description: typeof metadata.description === 'string' ? metadata.description : c.description,
           favicon: feishu ? FEISHU_LOGO_URLS[0]
             : typeof metadata.favicon === 'string' ? metadata.favicon : c.favicon,
-          height: feishu && !c.sizeLocked ? 90 : c.height,
+          height: (feishu || (medium && !image)) && !c.sizeLocked ? 90 : c.height,
           isParsing: false,
         } : c);
         saveStateDebounced(next, groupsRef.current);
@@ -235,14 +244,25 @@ export function usePieMenuState({
     if (!card || card.type !== 'image' || recognizingIdsRef.current.has(cardId)) return;
     recognizingIdsRef.current.add(cardId);
     setActivePieMenu(null);
+    setResolutionPanel(null);
     setCards((prev) => prev.map((item) => item.id === cardId ? { ...item, isParsing: true } : item));
+    let reported = false;
     try {
-      const result = await recognizeCardImage(card, mode);
+      const result = await recognizeCardImage(card, mode, (report) => {
+        reported = true;
+        onRecognitionReport?.(report);
+      });
       const current = cardsRef.current.find((item) => item.id === cardId);
       if (!current || current.type !== 'image') return;
       if (!result) {
         setCards((prev) => prev.map((item) => item.id === cardId ? { ...item, isParsing: false } : item));
         showToast(mode === 'link' ? '未找到可信原链接，图片已保留' : '未识别到文字，图片已保留');
+        return;
+      }
+      if (result.kind === 'review') {
+        setCards((prev) => prev.map((item) => item.id === cardId ? { ...item, isParsing: false } : item));
+        setResolutionPanel({ cardId, resolution: result.resolution, text: result.text });
+        showToast(result.resolution.reason);
         return;
       }
       pushHistory(cardsRef.current.map((item) => item.id === cardId ? { ...item, isParsing: false } : item), groupsRef.current);
@@ -260,11 +280,72 @@ export function usePieMenuState({
       showToast(result.outcome === 'link' ? '已恢复原链接' : '已创建 OCR 文本卡片');
     } catch (error) {
       setCards((prev) => prev.map((item) => item.id === cardId ? { ...item, isParsing: false } : item));
-      showToast(error instanceof Error ? error.message : '图片识别失败，原图已保留');
+      const message = error instanceof Error ? error.message : '图片识别失败，原图已保留';
+      if (!reported) onRecognitionReport?.({ id: `${Date.now()}-${Math.random()}`,
+        at: new Date().toLocaleTimeString(), cardId, mode, status: 'error', reason: message,
+        events: [{ name: 'client', status: 'failed', detail: message }] });
+      if (mode === 'link') setResolutionPanel({ cardId, text: '', resolution: {
+        status: 'error', reason: message, stages: [], candidates: [],
+        manual_search: manualSearchFallback(undefined, ''),
+      } });
+      showToast(message);
     } finally {
       recognizingIdsRef.current.delete(cardId);
     }
-  }, [cardsRef, groupsRef, pushHistory, setCards, setGroups, showToast]);
+  }, [cardsRef, groupsRef, pushHistory, setCards, setGroups, showToast, onRecognitionReport]);
+
+  const handleConfirmCandidate = useCallback(async (url: string) => {
+    const panel = resolutionPanel;
+    if (!panel) return;
+    const listedCandidate = panel.resolution.candidates.find((candidate) => candidate.url === url);
+    if (!listedCandidate && panel.resolution.search_page) {
+      try {
+        const parsed = new URL(url);
+        if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.port ||
+            !['xiaohongshu.com', 'www.xiaohongshu.com'].includes(parsed.hostname) ||
+            !/^\/(?:explore|discovery\/item)\/[A-Za-z0-9]+\/?$/.test(parsed.pathname)) {
+          showToast('请粘贴小红书具体笔记的 HTTPS 链接');
+          return;
+        }
+      } catch { showToast('笔记链接格式不正确'); return; }
+    } else if (!listedCandidate) return;
+    const card = cardsRef.current.find((item) => item.id === panel.cardId);
+    if (!card || card.type !== 'image' || recognizingIdsRef.current.has(card.id)) return;
+    const candidate = listedCandidate || { url, title: panel.resolution.clues?.title || url,
+      author: panel.resolution.clues?.author || '', source: 'site' as const, score: 0 };
+    recognizingIdsRef.current.add(card.id);
+    setCards((prev) => prev.map((item) => item.id === card.id ? { ...item, isParsing: true } : item));
+    try {
+      const events: RecognitionReport['events'] = [];
+      const updates = await buildLinkCardUpdates(card, url, candidate.title, panel.text,
+        (event) => events.push(event));
+      const current = cardsRef.current.find((item) => item.id === card.id);
+      if (!current || current.type !== 'image') return;
+      pushHistory(cardsRef.current.map((item) => item.id === card.id ? { ...item, isParsing: false } : item), groupsRef.current);
+      const nextCards = cardsRef.current.map((item) => item.id === card.id ? {
+        ...item, ...updates,
+        defaultWidth: updates.width ?? item.width,
+        defaultHeight: updates.height ?? item.height,
+        sizeLocked: false,
+      } : item);
+      const nextGroups = groupsRef.current.map((group) => group.kind === 'bundle'
+        ? bundleBounds(nextCards, group.id, group) : group);
+      setCards(nextCards);
+      setGroups(nextGroups);
+      saveStateDebounced(nextCards, nextGroups);
+      onRecognitionReport?.({ id: `${Date.now()}-${Math.random()}`, at: new Date().toLocaleTimeString(),
+        cardId: card.id, mode: 'link', status: 'matched', reason: '手动确认候选并转换为网页卡',
+        events: [{ name: 'manual_confirmation', status: 'completed', detail: candidate.title, url }, ...events],
+        finalUrl: url });
+      setResolutionPanel(null);
+      showToast('已按确认的候选恢复原链接');
+    } catch (error) {
+      setCards((prev) => prev.map((item) => item.id === card.id ? { ...item, isParsing: false } : item));
+      showToast(error instanceof Error ? error.message : '候选链接转换失败，原图已保留');
+    } finally {
+      recognizingIdsRef.current.delete(card.id);
+    }
+  }, [cardsRef, groupsRef, pushHistory, resolutionPanel, setCards, setGroups, showToast, onRecognitionReport]);
 
   return {
     activePieMenu,
@@ -280,5 +361,8 @@ export function usePieMenuState({
     handleGroupColor,
     handleReparseLink,
     handleRecognizeImage,
+    resolutionPanel,
+    closeResolutionPanel: () => setResolutionPanel(null),
+    handleConfirmCandidate,
   };
 }

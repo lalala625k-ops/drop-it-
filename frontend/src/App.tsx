@@ -10,6 +10,9 @@ import { SelectionBox } from './components/SelectionBox';
 import { SnapGuides } from './components/SnapGuides';
 import { CanvasCommandMenu, CanvasCommand } from './components/CanvasCommandMenu';
 import { CanvasModals } from './components/CanvasModals';
+import { ReverseResolutionPanel } from './components/ReverseResolutionPanel';
+import { RecognitionDiagnostics } from './components/RecognitionDiagnostics';
+import { RecognitionReport } from './utils/recognizeCardImage';
 
 import { computeCardFocusViewport } from './utils/canvas';
 import { exportBackup, getLocalData, getRemoteRevision, currentServerRevision } from './utils/storage';
@@ -71,7 +74,19 @@ export default function App() {
     };
   }, []);
 
-  const showToast = useCallback((_msg: string) => {}, []);
+  const [toast, setToast] = useState<string | null>(null);
+  const [recognitionReports, setRecognitionReports] = useState<RecognitionReport[]>([]);
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
+  const onRecognitionReport = useCallback((report: RecognitionReport) => {
+    setRecognitionReports((previous) => [report, ...previous].slice(0, 20));
+    setDiagnosticsOpen(true);
+  }, []);
+  const showToast = useCallback((msg: string) => setToast(msg), []);
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(null), 5000);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
 
   // Base Canvas & State Hooks
   const { pushHistory, undo } = useHistory();
@@ -169,7 +184,10 @@ export default function App() {
     showToast,
   });
 
-  const pieMenu = usePieMenuState({ cardsRef, groupsRef, setCards, setGroups, pushHistory, showToast });
+  const pieMenu = usePieMenuState({ cardsRef, groupsRef, setCards, setGroups, pushHistory, showToast, onRecognitionReport });
+  const resolutionCard = pieMenu.resolutionPanel
+    ? cards.find((card) => card.id === pieMenu.resolutionPanel?.cardId && card.type === 'image')
+    : null;
 
   const actions = useCanvasActions({
     cardsRef,
@@ -567,6 +585,26 @@ export default function App() {
         canUniformWidth={cards.length > 1}
         onCommand={handleCanvasCommand}
         onClose={() => setCanvasMenuPosition(null)} />}
+      {pieMenu.resolutionPanel && resolutionCard && (
+        <ReverseResolutionPanel card={resolutionCard} viewport={viewport}
+          resolution={pieMenu.resolutionPanel.resolution}
+          onClose={pieMenu.closeResolutionPanel}
+          onConfirm={pieMenu.handleConfirmCandidate} />
+      )}
+      {recognitionReports.length > 0 && !diagnosticsOpen && (
+        <button type="button" onClick={() => setDiagnosticsOpen(true)}
+          className="fixed right-3 top-3 z-[115] border border-ink bg-paper px-3 py-2 text-xs font-bold text-ink">
+          识别记录 {recognitionReports.length}
+        </button>
+      )}
+      {diagnosticsOpen && <RecognitionDiagnostics reports={recognitionReports}
+        activeReviewCardId={pieMenu.resolutionPanel?.cardId}
+        onConfirmCandidate={pieMenu.handleConfirmCandidate}
+        onClose={() => setDiagnosticsOpen(false)} />}
+      {toast && <div role="status" aria-live="polite"
+        className="fixed bottom-6 left-1/2 z-[120] max-w-[min(90vw,480px)] -translate-x-1/2 border border-ink bg-paper px-4 py-3 text-center text-xs text-ink shadow-xl pointer-events-none">
+        {toast}
+      </div>}
     </div>
   );
 }
