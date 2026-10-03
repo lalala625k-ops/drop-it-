@@ -57,19 +57,22 @@ export function useSelection() {
     marqueeBaseGroupsRef.current = new Set(isShift ? selectedGroupIdsRef.current : []);
   }, []);
 
-  const updateMarqueeSelection = useCallback((rect: Rect, cards: Card[], groups: Group[]) => {
+  const updateMarqueeSelection = useCallback((rect: Rect, cards: Card[], groups: Group[], isCtrl = false) => {
     setSelectionRect(rect);
     const matchedGroups = new Set(marqueeBaseGroupsRef.current);
-    groups.forEach((group) => {
-      const members = cards.filter((card) => card.bundleId === group.id);
-      const bounds = group.kind === 'bundle' && !group.collapsed ? bundleBounds(cards, group.id, group) : group;
-      const width = group.kind === 'bundle' && group.collapsed ? bundleCollapsedWidth(group.width) : bounds.width;
-      const height = group.kind === 'bundle' && group.collapsed ? bundleCollapsedHeight(members.length) : bounds.height;
-      if (rectsIntersect(rect, { x: bounds.x, y: bounds.y, width, height })) matchedGroups.add(group.id);
-    });
+    if (isCtrl) {
+      groups.forEach((group) => {
+        const members = cards.filter((card) => card.bundleId === group.id);
+        const bounds = group.kind === 'bundle' && !group.collapsed ? bundleBounds(cards, group.id, group) : group;
+        const width = group.kind === 'bundle' && group.collapsed ? bundleCollapsedWidth(group.width) : bounds.width;
+        const height = group.kind === 'bundle' && group.collapsed ? bundleCollapsedHeight(members.length) : bounds.height;
+        if (rectsIntersect(rect, { x: bounds.x, y: bounds.y, width, height })) matchedGroups.add(group.id);
+      });
+    }
     const matched = new Set(marqueeBaseCardsRef.current);
     cards.forEach((c) => {
-      if ((!c.bundleId || !matchedGroups.has(c.bundleId)) && rectsIntersect(rect, cardVisualBounds(c))) {
+      const shouldCheck = !isCtrl || !c.bundleId || !matchedGroups.has(c.bundleId);
+      if (shouldCheck && rectsIntersect(rect, cardVisualBounds(c))) {
         matched.add(c.id);
       }
     });

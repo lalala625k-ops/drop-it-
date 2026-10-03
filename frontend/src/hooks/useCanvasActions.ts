@@ -7,6 +7,7 @@ import { alignCards } from '../utils/alignment';
 import { bundleBounds } from './useBundleGroups';
 import { textCardSize } from '../utils/textCardSize';
 import { restoreCardSize } from '../utils/cardDefaultSize';
+import { getImageRatio, getImageCardTextHeight } from '../utils/imageCardRatio';
 
 interface UseCanvasActionsProps {
   cardsRef: MutableRefObject<Card[]>;
@@ -119,6 +120,30 @@ export function useCanvasActions({
       return next;
     });
     setSelectedCardIds(new Set([newCard.id]));
+
+    if (newCard.type === 'text' && !cardData.content) {
+      const focusText = () => {
+        const cardEl = document.querySelector(`[data-card-id="${newCard.id}"]`);
+        const textarea = cardEl?.querySelector('textarea[data-text-editor]') as HTMLTextAreaElement | null;
+        if (textarea) {
+          textarea.focus();
+          const len = textarea.value.length;
+          textarea.setSelectionRange(len, len);
+          return true;
+        }
+        return false;
+      };
+      window.requestAnimationFrame(() => {
+        if (!focusText()) {
+          window.requestAnimationFrame(() => {
+            if (!focusText()) {
+              window.setTimeout(focusText, 50);
+            }
+          });
+        }
+      });
+    }
+
     return newCard;
   }, [cardsRef, groupsRef, maxZIndexRef, mouseWorldRef, pushHistory, setCards, setSelectedCardIds]);
 
@@ -160,8 +185,7 @@ export function useCanvasActions({
     const newParent = createParentWithCollisionAvoidance(mouseWorldRef.current, cardsRef.current, groupsRef.current);
     setSelectedGroupIds(new Set([newParent.id]));
     saveStateDebounced(cardsRef.current, [...groupsRef.current, newParent]);
-    showToast(`已在光标处创建父物体「${newParent.title}」，按住 Ctrl 拖拽卡片或 Group 即可链接`);
-  }, [cardsRef, createParentWithCollisionAvoidance, groupsRef, mouseWorldRef, pushHistory, setSelectedGroupIds, showToast]);
+  }, [cardsRef, createParentWithCollisionAvoidance, groupsRef, mouseWorldRef, pushHistory, setSelectedGroupIds]);
 
   const handleGroup = useCallback(() => {
     const selectedBundleIds = new Set(groupsRef.current
@@ -189,8 +213,7 @@ export function useCanvasActions({
       : group), res.newGroup];
     commitState(nextCards, nextGroups);
     setSelectedGroupIds(new Set([res.newGroup.id]));
-    showToast(`已创建父物体「${res.newGroup.title}」，已链接 ${selectedCards.length + selectedBundles.length} 项`);
-  }, [cardsRef, commitState, createGroupFromSelection, groupsRef, handleCreateNewParentAtCursor, mouseWorldRef, pushHistory, selectedCardIdsRef, selectedGroupIdsRef, setSelectedGroupIds, showToast]);
+  }, [cardsRef, commitState, createGroupFromSelection, groupsRef, handleCreateNewParentAtCursor, mouseWorldRef, pushHistory, selectedCardIdsRef, selectedGroupIdsRef, setSelectedGroupIds]);
 
   const handleUngroup = useCallback(() => {
     const gIds = selectedGroupIdsRef.current;
@@ -207,8 +230,7 @@ export function useCanvasActions({
         ? { ...group, parentIds: group.parentIds.filter((id) => !gIds.has(id)) } : group);
     commitState(nextCards, nextGroups);
     setSelectedGroupIds(new Set());
-    showToast('已解散所选 Group 或父物体，卡片已保留');
-  }, [cardsRef, commitState, groupsRef, pushHistory, selectedGroupIdsRef, setSelectedGroupIds, showToast]);
+  }, [cardsRef, commitState, groupsRef, pushHistory, selectedGroupIdsRef, setSelectedGroupIds]);
 
   const handleAutoPack = useCallback(() => {
     pushHistory(cardsRef.current, groupsRef.current);
@@ -222,21 +244,41 @@ export function useCanvasActions({
     commitState(nextCards, refreshGroupBounds(nextCards, groupsRef.current));
   }, [cardsRef, commitState, groupsRef, pushHistory, refreshGroupBounds, selectedCardIdsRef]);
 
-  const handleUniformCardWidth = useCallback(() => {
-    const cards = cardsRef.current;
-    if (cards.length < 2) return;
-    const width = Math.max(80, Math.round(cards.reduce((sum, card) => sum + card.width, 0) / cards.length));
-    if (cards.every((card) => card.width === width)) return;
-    pushHistory(cards, groupsRef.current);
-    const nextCards = cards.map((card) => card.width === width ? card : ({
-      ...card, x: card.x + (card.width - width) / 2, width,
-      defaultWidth: card.defaultWidth ?? card.width,
-      defaultHeight: card.defaultHeight ?? card.height,
-      sizeLocked: true,
-    }));
+  const handleUniformCardWidth = useCallback((targetCardIds?: Set<string>) => {
+    const selIds = targetCardIds || selectedCardIdsRef.current;
+    const targets = selIds.size > 0
+      ? cardsRef.current.filter((c) => selIds.has(c.id))
+      : cardsRef.current;
+    if (targets.length < 2) return;
+
+    const width = Math.max(80, Math.round(targets.reduce((sum, card) => sum + card.width, 0) / targets.length));
+    const targetSet = new Set(targets.map((c) => c.id));
+
+    pushHistory(cardsRef.current, groupsRef.current);
+    const nextCards = cardsRef.current.map((card) => {
+      if (!targetSet.has(card.id)) return card;
+      let newHeight = card.height;
+      const hasImage = card.type === 'image' || (card.type === 'web' && !!card.image);
+      if (hasImage) {
+        const ratio = getImageRatio(card);
+        const textH = getImageCardTextHeight(card);
+        newHeight = Math.round(width / ratio + textH);
+      } else if (card.type === 'text') {
+        const size = textCardSize(card.content || '');
+        newHeight = Math.max(size.height, card.height);
+      }
+      return {
+        ...card,
+        x: card.x + (card.width - width) / 2,
+        width,
+        height: newHeight,
+        defaultWidth: width,
+        defaultHeight: newHeight,
+        sizeLocked: true,
+      };
+    });
     commitState(nextCards, refreshGroupBounds(nextCards, groupsRef.current));
-    showToast(`已统一 ${cards.length} 张卡片宽度为 ${width}`);
-  }, [cardsRef, commitState, groupsRef, pushHistory, refreshGroupBounds, showToast]);
+  }, [cardsRef, commitState, groupsRef, pushHistory, refreshGroupBounds, selectedCardIdsRef]);
 
   const handleResetCardSize = useCallback((id: string) => {
     const card = cardsRef.current.find((item) => item.id === id);
@@ -248,8 +290,7 @@ export function useCanvasActions({
     const nextCards = cardsRef.current.map((item) => item.id === id ? restored : item);
     setCards(nextCards);
     saveStateDebounced(nextCards, groupsRef.current);
-    showToast('卡片已恢复默认大小');
-  }, [cardsRef, groupsRef, pushHistory, setCards, showToast]);
+  }, [cardsRef, groupsRef, pushHistory, setCards]);
 
   const handleAlign = useCallback((dir: 'top' | 'bottom' | 'left' | 'right') => {
     const selectedBundleIds = new Set(groupsRef.current
@@ -277,9 +318,7 @@ export function useCanvasActions({
     });
 
     commitState(nextCards, refreshGroupBounds(nextCards, nextGroups));
-    const dirNames = { left: '向左', right: '向右', top: '向上', bottom: '向下' };
-    showToast(`已${dirNames[dir]}对齐 ${targetCards.length + targetGroups.length} 项，间距 5px`);
-  }, [cardsRef, commitState, groupsRef, pushHistory, refreshGroupBounds, selectedCardIdsRef, selectedGroupIdsRef, showToast]);
+  }, [cardsRef, commitState, groupsRef, pushHistory, refreshGroupBounds, selectedCardIdsRef, selectedGroupIdsRef]);
 
   return {
     commitState,

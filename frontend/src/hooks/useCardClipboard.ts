@@ -39,8 +39,7 @@ export function useCardClipboard({
         __type: 'infinite-canvas-objects', cards: snapshot.cards, groups: snapshot.groups,
       })).catch(() => { /* The in-memory snapshot remains available. */ });
     }
-    showToast(`已复制 ${snapshot.cards.length + snapshot.groups.length} 个对象`);
-  }, [cardsRef, groupsRef, selectedCardIdsRef, selectedGroupIdsRef, showToast]);
+  }, [cardsRef, groupsRef, selectedCardIdsRef, selectedGroupIdsRef]);
 
   const stagePaste = useCallback((snapshot: CanvasClipboardSnapshot) => {
     if (!snapshot.cards.length && !snapshot.groups.length) return;
@@ -60,9 +59,8 @@ export function useCardClipboard({
     saveStateDebounced(tree.cards, tree.groups);
     setSelectedCardIds(new Set(cloned.cards.map((card) => card.id)));
     setSelectedGroupIds(new Set(cloned.groups.map((group) => group.id)));
-    showToast(`已粘贴 ${cloned.cards.length + cloned.groups.length} 个对象`);
   }, [cardsRef, groupsRef, maxZIndexRef, pushHistory, setCards, setGroups,
-    setSelectedCardIds, setSelectedGroupIds, showToast]);
+    setSelectedCardIds, setSelectedGroupIds]);
 
   const commitPendingPaste = useCallback((target: { x: number; y: number }) => {
     mouseWorldRef.current = target;

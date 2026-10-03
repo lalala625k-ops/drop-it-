@@ -29,6 +29,7 @@ interface CanvasModalsProps {
   onDisconnectCardParent: (cardId: string) => void;
   onDisconnectGroupParent: (bundleId: string, parentId: string) => void;
   onClosePieMenu: () => void;
+  onUniformWidth?: () => void;
   // Search
   isSearchOpen: boolean;
   onCloseSearch: () => void;
@@ -57,6 +58,7 @@ export const CanvasModals: React.FC<CanvasModalsProps> = ({
   onDisconnectCardParent,
   onDisconnectGroupParent,
   onClosePieMenu,
+  onUniformWidth,
   isSearchOpen,
   onCloseSearch,
   onSelectSearchCard,
@@ -82,6 +84,7 @@ export const CanvasModals: React.FC<CanvasModalsProps> = ({
           target={menuTarget}
           parentId={bundleParentId}
           allCards={cards}
+          selectedCardIds={activePieMenu.selectedCardIds}
           centerPosition={activePieMenu.center}
           currentPointerPosition={activePieMenu.pointer}
           isRightMouseDown={activePieMenu.isRightMouseDown}
@@ -91,6 +94,7 @@ export const CanvasModals: React.FC<CanvasModalsProps> = ({
           onGroupColor={(color) => { if (menuTarget.kind === 'parent') onGroupColor(menuId, color); }}
           onReparseLink={() => onReparseLink(menuId)}
           onRecognizeImage={(mode) => onRecognizeImage(menuId, mode)}
+          onUniformWidth={onUniformWidth}
           onUngroup={() => {
             if (menuTarget.kind === 'bundle') onUngroupBundle(menuId);
             else if (menuTarget.kind === 'parent') onDissolveParent(menuId);

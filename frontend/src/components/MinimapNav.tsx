@@ -85,25 +85,87 @@ export const MinimapNav: React.FC<MinimapNavProps> = ({
       bMaxY = Math.max(bMaxY, g.y + gh);
     });
 
-    // Generous world padding
-    const worldPad = 250;
+    // Compact world padding to eliminate excess empty space around content
+    const worldPad = expanded ? 100 : 30;
     bMinX -= worldPad;
     bMaxX += worldPad;
     bMinY -= worldPad;
     bMaxY += worldPad;
 
-    const worldW = Math.max(1200, bMaxX - bMinX);
-    const worldH = Math.max(800, bMaxY - bMinY);
-    const aspect = worldW / worldH;
-    const mapWidth = expanded
-      ? aspect >= 1 ? windowSize.width / 2 : Math.max(180, Math.min(windowSize.width / 2, windowSize.height * aspect / 2))
-      : Math.min(280, windowSize.width - 32);
-    const mapHeight = expanded
-      ? aspect < 1 ? windowSize.height / 2 : Math.max(180, Math.min(windowSize.height / 2, windowSize.width / aspect / 2))
-      : Math.min(190, windowSize.height - 32);
+    const rawWorldW = bMaxX - bMinX;
+    const rawWorldH = bMaxY - bMinY;
+    const minWorldW = 300;
+    const minWorldH = 200;
+    const worldW = Math.max(minWorldW, rawWorldW);
+    const worldH = Math.max(minWorldH, rawWorldH);
 
-    const innerW = mapWidth - PADDING * 2;
-    const innerH = mapHeight - PADDING * 2;
+    if (worldW > rawWorldW) {
+      const diff = (worldW - rawWorldW) / 2;
+      bMinX -= diff;
+      bMaxX += diff;
+    }
+    if (worldH > rawWorldH) {
+      const diff = (worldH - rawWorldH) / 2;
+      bMinY -= diff;
+      bMaxY += diff;
+    }
+
+    const contentAspect = worldW / worldH;
+
+    // Full screen reference dimensions
+    const screenW = typeof window !== 'undefined'
+      ? (window.screen?.availWidth || window.screen?.width || 1920)
+      : 1920;
+    const screenH = typeof window !== 'undefined'
+      ? (window.screen?.availHeight || window.screen?.height || 1080)
+      : 1080;
+    const fullW = Math.max(screenW, windowSize.width);
+    const fullH = Math.max(screenH, windowSize.height);
+
+    // If either width or height decreases (e.g. windowed mode), the minimap scales down proportionally
+    const scaleRatio = Math.min(windowSize.width / fullW, windowSize.height / fullH);
+    const windowScale = Math.min(1, Math.max(0.35, scaleRatio));
+
+    // Base max dimensions in full window
+    const BASE_MAX_W = 280;
+    const BASE_MAX_H = 190;
+    const maxBoxW = Math.min(BASE_MAX_W * windowScale, windowSize.width - 32);
+    const maxBoxH = Math.min(BASE_MAX_H * windowScale, windowSize.height - 32);
+
+    // Adapt compact minimap box to content aspect ratio
+    const availW = Math.max(30, maxBoxW - PADDING * 2);
+    const availH = Math.max(30, maxBoxH - PADDING * 2);
+    const envelopeAspect = availW / availH;
+    let compactInnerW: number;
+    let compactInnerH: number;
+    if (contentAspect >= envelopeAspect) {
+      compactInnerW = availW;
+      compactInnerH = Math.max(24, Math.round(compactInnerW / contentAspect));
+    } else {
+      compactInnerH = availH;
+      compactInnerW = Math.max(24, Math.round(compactInnerH * contentAspect));
+    }
+
+    // Adapt expanded HUD box to content aspect ratio
+    const maxExpW = Math.min(windowSize.width * 0.75, windowSize.width - 64);
+    const maxExpH = Math.min(windowSize.height * 0.75, windowSize.height - 64);
+    const expAvailW = maxExpW - PADDING * 2;
+    const expAvailH = maxExpH - PADDING * 2;
+    const expEnvelopeAspect = expAvailW / expAvailH;
+    let expInnerW: number;
+    let expInnerH: number;
+    if (contentAspect >= expEnvelopeAspect) {
+      expInnerW = expAvailW;
+      expInnerH = Math.max(40, Math.round(expInnerW / contentAspect));
+    } else {
+      expInnerH = expAvailH;
+      expInnerW = Math.max(40, Math.round(expInnerH * contentAspect));
+    }
+
+    const innerW = expanded ? expInnerW : compactInnerW;
+    const innerH = expanded ? expInnerH : compactInnerH;
+    const mapWidth = Math.round(innerW + PADDING * 2);
+    const mapHeight = Math.round(innerH + PADDING * 2);
 
     const fitScale = Math.min(innerW / worldW, innerH / worldH);
     const renderedW = worldW * fitScale;
@@ -185,7 +247,7 @@ export const MinimapNav: React.FC<MinimapNavProps> = ({
         dragStartRef.current = localPoint(event.clientX, event.clientY);
       }}
       onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); }}
-      className={`fixed ${expanded ? 'z-[30001]' : 'z-[30000]'} pointer-events-auto bg-paper border-2 border-ink overflow-hidden cursor-crosshair select-none rounded-none`}
+      className={`fixed ${expanded ? 'z-[30001] bg-transparent' : 'z-[30000] bg-paper'} pointer-events-auto border-2 border-ink overflow-hidden cursor-crosshair select-none rounded-none`}
       style={{
         left: expanded ? '50%' : '16px',
         top: expanded ? '50%' : undefined,
@@ -196,7 +258,7 @@ export const MinimapNav: React.FC<MinimapNavProps> = ({
       }}
     >
       {/* Background Map Canvas / Paper Texture */}
-      <div className="absolute inset-0 bg-[#f4f2ed]" />
+      {!expanded && <div className="absolute inset-0 bg-[#f4f2ed]" />}
 
       {/* SVG Layer for Network Links */}
       <svg className="absolute inset-0 w-full h-full pointer-events-none">

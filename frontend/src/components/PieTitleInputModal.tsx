@@ -13,18 +13,10 @@ interface PieTitleInputModalProps {
 
 export const PieTitleInputModal: React.FC<PieTitleInputModalProps> = ({
   initialTitle,
-  originalTitle,
-  cardType,
-  subject = 'card',
   position,
   onConfirm,
-  onBackToPie,
   onClose,
 }) => {
-  const isCard = subject === 'card';
-  const heading = isCard ? '设置便签顶部标题' : subject === 'bundle' ? '设置 Group 标题' : '重命名父物体';
-  const fieldLabel = isCard ? '输入卡片标题 (# 一级 · ## 二级)' : '输入名称';
-  const saveLabel = isCard ? '保存顶部标题 (Enter)' : '保存名称 (Enter)';
   const [title, setTitle] = useState(initialTitle);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -47,96 +39,50 @@ export const PieTitleInputModal: React.FC<PieTitleInputModalProps> = ({
     }
   };
 
-  const handleClear = () => {
-    onConfirm(null);
-  };
+  const computedWidth = (() => {
+    let charWidth = 0;
+    for (let i = 0; i < title.length; i++) {
+      charWidth += title.charCodeAt(i) > 255 ? 13 : 8;
+    }
+    return Math.min(460, Math.max(240, charWidth + 56));
+  })();
 
   return (
     <div
-      className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-auto bg-paper border border-ash shadow-none text-ink w-80 p-4 select-none animate-in fade-in zoom-in-95 duration-100 rounded-none"
-      style={{ left: `${position.x}px`, top: `${position.y}px` }}
+      className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-auto bg-paper border border-ink p-2.5 shadow-md select-none rounded-[10px] animate-in fade-in zoom-in-95 duration-100"
+      style={{ left: `${position.x}px`, top: `${position.y}px`, width: `${computedWidth}px` }}
       onMouseDown={(e) => e.stopPropagation()}
     >
-      {/* Header */}
-      <div className="flex items-center justify-between pb-2.5 mb-3 border-b border-ash">
-        <div className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-ink" />
-          <span className="text-[11px] font-bold uppercase tracking-[0.05em] text-ink">{heading}</span>
-        </div>
+      <input
+        ref={inputRef}
+        type="text"
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        onKeyDown={handleKeyDown}
+        className="w-full bg-paper text-ink text-[13px] px-2.5 py-1.5 outline-none font-retina rounded-[8px] border border-ink/40 focus:border-ink transition-colors"
+      />
+      <div className="flex items-center justify-end gap-2 mt-2">
         <button
           type="button"
-          onClick={onBackToPie}
-          className="text-[10px] font-bold uppercase tracking-[0.05em] text-ink/70 hover:text-ink px-2 py-0.5 rounded-[10px] border border-ash hover:border-ink transition-colors"
+          onClick={onClose}
+          aria-label="取消"
+          className="w-7 h-7 flex items-center justify-center rounded-[8px] border border-ink/40 text-ink/70 hover:border-ink hover:text-ink hover:bg-stone/20 transition-colors"
         >
-          返回
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
         </button>
-      </div>
-
-      {/* Input */}
-      <div className="space-y-3">
-        <div>
-          <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-[0.05em] text-ink/60 mb-1.5">
-            <span>{fieldLabel}</span>
-            {initialTitle && (
-              <span className="text-ink/60 font-mono truncate max-w-[120px]" title={initialTitle}>
-                当前: {initialTitle}
-              </span>
-            )}
-          </div>
-          <input
-            ref={inputRef}
-            type="text"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={isCard ? '如: # 待办清单 或 ## 项目灵感...' : '输入名称...'}
-            className="w-full bg-paper text-ink text-[13px] px-3 py-1.5 outline-none font-retina rounded-[10px] transition-colors border border-ink/40 focus:border-ink"
-          />
-          {subject !== 'parent' && <div className="mt-1 text-[10px] text-ink/50 font-mono">
-            提示: # + 空格为一级标题，## + 空格为二级标题
-          </div>}
-          {originalTitle && cardType === 'web' && (
-            <div className="mt-1.5 text-[10px] font-mono text-ink/50 truncate" title={originalTitle}>
-              原网页标题: {originalTitle} (将完整保留，不被替换)
-            </div>
-          )}
-          {originalTitle && cardType === 'image' && (
-            <div className="mt-1.5 text-[10px] font-mono text-ink/50 truncate" title={originalTitle}>
-              原图片标题: {originalTitle} (将完整保留，不被替换)
-            </div>
-          )}
-        </div>
-
-        {/* Action Buttons */}
-        <div className="flex items-center justify-between pt-2">
-          <div>
-            {initialTitle && (
-              <button
-                type="button"
-                onClick={handleClear}
-                className="px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.05em] text-ink/80 hover:text-ink border border-ash hover:border-ink transition-colors rounded-[10px]"
-              >
-                {isCard ? '清除顶部标题' : '清除名称'}
-              </button>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-3 py-1 text-[11px] font-bold uppercase tracking-[0.05em] text-ink/70 hover:text-ink border border-ash hover:border-ink transition-colors rounded-[10px]"
-            >
-              取消 (ESC)
-            </button>
-            <button
-              type="button"
-              onClick={() => onConfirm(title.trim() || null)}
-              className="px-3.5 py-1 text-[11px] font-bold uppercase tracking-[0.05em] rounded-[10px] transition-all bg-ink text-paper border border-ink hover:bg-ink/90 cursor-pointer"
-            >
-              {saveLabel}
-            </button>
-          </div>
-        </div>
+        <button
+          type="button"
+          onClick={() => onConfirm(title.trim() || null)}
+          aria-label="保存"
+          className="w-7 h-7 flex items-center justify-center rounded-[8px] bg-ink text-paper hover:bg-ink/80 transition-colors"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+        </button>
       </div>
     </div>
   );

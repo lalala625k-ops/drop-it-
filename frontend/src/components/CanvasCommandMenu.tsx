@@ -27,8 +27,8 @@ const items: { id: CanvasCommand; label: string; description: string }[] = [
   { id: 'uniform-width', label: '均宽', description: '统一所有卡片宽度' },
 ];
 const shortcuts: Partial<Record<CanvasCommand, string>> = {
-  note: 'Ctrl+N', parent: 'Ctrl+J', group: 'Ctrl+G', search: 'Ctrl+F / Ctrl+K',
-  copy: 'Ctrl+C', paste: 'Ctrl+V',
+  note: 'Ctrl+N', parent: 'Ctrl+P', group: 'Ctrl+G', search: 'Ctrl+F / Ctrl+K',
+  copy: 'Ctrl+C', paste: 'Ctrl+V', fit: 'Shift+1', 'uniform-width': 'Ctrl+Shift+R',
 };
 
 export const CanvasCommandMenu: React.FC<Props> = ({ position, canCopy, canPaste, canUniformWidth, onCommand, onClose }) => {
@@ -53,15 +53,38 @@ export const CanvasCommandMenu: React.FC<Props> = ({ position, canCopy, canPaste
 
   useEffect(() => {
     const move = (event: MouseEvent) => {
-      if (rightHeldRef.current) setActiveId(pieGestureMoved(position, { x: event.clientX, y: event.clientY })
-        ? optionAt(event.clientX, event.clientY) : null);
+      if (!rightHeldRef.current) return;
+      const moved = pieGestureMoved(position, { x: event.clientX, y: event.clientY });
+      const current = moved ? optionAt(event.clientX, event.clientY) : null;
+      setActiveId(current);
+      if (current && shortcuts[current]) {
+        const idx = items.findIndex((i) => i.id === current);
+        if (idx >= 0) {
+          const p = pieSlotPoint({ x: EXTENT, y: EXTENT }, RADIUS, slots[idx].angle);
+          const screenX = center.x + (p.x - EXTENT) * scale;
+          const screenY = center.y + (p.y - EXTENT) * scale;
+          showHint({
+            getBoundingClientRect: () => ({
+              left: screenX - (SIZE * scale) / 2,
+              top: screenY - (SIZE * scale) / 2,
+              width: SIZE * scale,
+              height: SIZE * scale,
+              bottom: screenY + (SIZE * scale) / 2,
+              right: screenX + (SIZE * scale) / 2,
+            } as DOMRect),
+          } as HTMLElement, shortcuts[current] || null);
+        }
+      } else {
+        hideHint();
+      }
     };
     const release = (event: MouseEvent) => {
-      if (event.button !== 2 || !rightHeldRef.current) return;
+      if (event.button !== 2) return;
       rightHeldRef.current = false;
-      if (!pieGestureMoved(position, { x: event.clientX, y: event.clientY })) return;
-      const target = optionAt(event.clientX, event.clientY);
+      const target = pieGestureMoved(position, { x: event.clientX, y: event.clientY })
+        ? optionAt(event.clientX, event.clientY) : null;
       setActiveId(null);
+      hideHint();
       if (target) onCommand(target);
       else onClose();
     };

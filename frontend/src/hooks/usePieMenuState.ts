@@ -9,6 +9,7 @@ import { manualSearchFallback } from '../utils/manualSearch';
 
 export interface ActivePieMenuState {
   target: { kind: 'card'; card: Card } | { kind: 'bundle' | 'parent'; group: Group };
+  selectedCardIds?: Set<string>;
   center: { x: number; y: number };
   pointer: { x: number; y: number };
   isRightMouseDown: boolean;
@@ -40,9 +41,11 @@ export function usePieMenuState({
     cardId: string; resolution: ReverseResolution; text: string;
   } | null>(null);
 
-  const openPieMenu = useCallback((card: Card, clientX: number, clientY: number) => {
+  const openPieMenu = useCallback((card: Card, clientX: number, clientY: number, multiSelectedCardIds?: Set<string>) => {
     setActivePieMenu({
       target: { kind: 'card', card },
+      selectedCardIds: multiSelectedCardIds && multiSelectedCardIds.has(card.id) && multiSelectedCardIds.size > 1
+        ? new Set(multiSelectedCardIds) : new Set([card.id]),
       center: { x: clientX, y: clientY },
       pointer: { x: clientX, y: clientY },
       isRightMouseDown: true,
@@ -71,6 +74,10 @@ export function usePieMenuState({
 
   const handleConfirmPieDate = useCallback(
     (cardId: string, dateStr: string | null) => {
+      const selectedIds = activePieMenu?.selectedCardIds && activePieMenu.selectedCardIds.has(cardId) && activePieMenu.selectedCardIds.size > 1
+        ? [...activePieMenu.selectedCardIds]
+        : [cardId];
+
       if (activePieMenu?.target.kind !== 'card' && activePieMenu?.target.group.id === cardId) {
         pushHistory(cardsRef.current, groupsRef.current);
         const next = groupsRef.current.map((g) => g.id === cardId ? { ...g, reminder: dateStr } : g);
@@ -80,18 +87,21 @@ export function usePieMenuState({
       }
       pushHistory(cardsRef.current, groupsRef.current);
       setCards((prev) => {
-        const next = prev.map((c) => (c.id === cardId ? { ...c, reminder: dateStr } : c));
+        const next = prev.map((c) => (selectedIds.includes(c.id) ? { ...c, reminder: dateStr } : c));
         saveStateDebounced(next, groupsRef.current);
         return next;
       });
-      showToast(dateStr ? `已标记日期: ${dateStr}` : '已清除标记日期');
       setActivePieMenu(null);
     },
-    [activePieMenu, cardsRef, groupsRef, pushHistory, setCards, setGroups, showToast]
+    [activePieMenu, cardsRef, groupsRef, pushHistory, setCards, setGroups]
   );
 
   const handleConfirmPieTitle = useCallback(
     (cardId: string, title: string | null) => {
+      const selectedIds = activePieMenu?.selectedCardIds && activePieMenu.selectedCardIds.has(cardId) && activePieMenu.selectedCardIds.size > 1
+        ? [...activePieMenu.selectedCardIds]
+        : [cardId];
+
       if (activePieMenu?.target.kind !== 'card' && activePieMenu?.target.group.id === cardId) {
         pushHistory(cardsRef.current, groupsRef.current);
         const next = groupsRef.current.map((g) => g.id === cardId ? { ...g, title: title?.trim() || '' } : g);
@@ -102,7 +112,7 @@ export function usePieMenuState({
       pushHistory(cardsRef.current, groupsRef.current);
       setCards((prev) => {
         const next = prev.map((c) => {
-          if (c.id === cardId) {
+          if (selectedIds.includes(c.id)) {
             const cleanTitle = title ? title.trim() : null;
             return { ...c, headerTitle: cleanTitle || undefined };
           }
@@ -111,16 +121,18 @@ export function usePieMenuState({
         saveStateDebounced(next, groupsRef.current);
         return next;
       });
-      showToast(title && title.trim() ? `已设置卡片顶部标题: ${title.trim()}` : '已清除卡片顶部标题');
       setActivePieMenu(null);
     },
-    [activePieMenu, cardsRef, groupsRef, pushHistory, setCards, setGroups, showToast]
+    [activePieMenu, cardsRef, groupsRef, pushHistory, setCards, setGroups]
   );
 
   const handleTogglePieTag = useCallback(
     (cardId: string, tag: string) => {
       const cleanTag = tag.trim();
       if (!cleanTag) return;
+      const selectedIds = activePieMenu?.selectedCardIds && activePieMenu.selectedCardIds.has(cardId) && activePieMenu.selectedCardIds.size > 1
+        ? [...activePieMenu.selectedCardIds]
+        : [cardId];
 
       if (activePieMenu?.target.kind !== 'card' && activePieMenu?.target.group.id === cardId) {
         pushHistory(cardsRef.current, groupsRef.current);
@@ -137,17 +149,18 @@ export function usePieMenuState({
       }
 
       pushHistory(cardsRef.current, groupsRef.current);
+      const targetCards = cardsRef.current.filter((c) => selectedIds.includes(c.id));
+      const allHave = targetCards.every((c) => c.tags?.includes(cleanTag));
+
       setCards((prev) => {
         const next = prev.map((c) => {
-          if (c.id !== cardId) return c;
+          if (!selectedIds.includes(c.id)) return c;
           const currentTags = Array.isArray(c.tags) ? [...c.tags] : [];
-          const idx = currentTags.indexOf(cleanTag);
-          if (idx >= 0) {
-            currentTags.splice(idx, 1);
-            showToast(`已移除标签「${cleanTag}」`);
+          if (allHave) {
+            const idx = currentTags.indexOf(cleanTag);
+            if (idx >= 0) currentTags.splice(idx, 1);
           } else {
-            currentTags.push(cleanTag);
-            showToast(`已添加标签「${cleanTag}」`);
+            if (!currentTags.includes(cleanTag)) currentTags.push(cleanTag);
           }
           return { ...c, tags: currentTags };
         });
@@ -155,7 +168,7 @@ export function usePieMenuState({
         return next;
       });
     },
-    [activePieMenu, cardsRef, groupsRef, pushHistory, setCards, setGroups, showToast]
+    [activePieMenu, cardsRef, groupsRef, pushHistory, setCards, setGroups]
   );
 
   const handleGroupColor = useCallback((groupId: string, color: string) => {
@@ -168,14 +181,12 @@ export function usePieMenuState({
     setActivePieMenu(null);
   }, [cardsRef, groupsRef, pushHistory, setGroups]);
 
-  const handleReparseLink = useCallback(async (cardId: string) => {
+  const reparseSingleLink = useCallback(async (cardId: string) => {
     const card = cardsRef.current.find((c) => c.id === cardId);
-    if (!card || card.type !== 'web' || !card.url || reparsingIdsRef.current.has(cardId)) return;
+    if (!card || card.type !== 'web' || !card.url) return;
 
     reparsingIdsRef.current.add(cardId);
-    setActivePieMenu(null);
     setCards((prev) => prev.map((c) => c.id === cardId ? { ...c, isParsing: true } : c));
-    showToast('正在重新解析链接');
 
     try {
       const response = await fetch(`/api/fetch-metadata?url=${encodeURIComponent(card.url)}`, {
@@ -239,12 +250,23 @@ export function usePieMenuState({
     }
   }, [cardsRef, groupsRef, pushHistory, setCards, showToast]);
 
-  const handleRecognizeImage = useCallback(async (cardId: string, mode: ImageRecognitionMode) => {
-    const card = cardsRef.current.find((item) => item.id === cardId);
-    if (!card || card.type !== 'image' || recognizingIdsRef.current.has(cardId)) return;
-    recognizingIdsRef.current.add(cardId);
+  const handleReparseLink = useCallback(async (cardId: string) => {
+    const selectedIds = activePieMenu?.selectedCardIds && activePieMenu.selectedCardIds.has(cardId) && activePieMenu.selectedCardIds.size > 1
+      ? [...activePieMenu.selectedCardIds]
+      : [cardId];
+
+    const targetCards = cardsRef.current.filter((c) => selectedIds.includes(c.id) && c.type === 'web' && c.url && !reparsingIdsRef.current.has(c.id));
+    if (targetCards.length === 0) return;
+
     setActivePieMenu(null);
-    setResolutionPanel(null);
+    showToast(targetCards.length > 1 ? `正在重新解析 ${targetCards.length} 个链接` : '正在重新解析链接');
+    await Promise.all(targetCards.map((c) => reparseSingleLink(c.id)));
+  }, [activePieMenu, cardsRef, reparseSingleLink, showToast]);
+
+  const recognizeSingleImage = useCallback(async (cardId: string, mode: ImageRecognitionMode) => {
+    const card = cardsRef.current.find((item) => item.id === cardId);
+    if (!card || card.type !== 'image') return;
+    recognizingIdsRef.current.add(cardId);
     setCards((prev) => prev.map((item) => item.id === cardId ? { ...item, isParsing: true } : item));
     let reported = false;
     try {
@@ -293,6 +315,20 @@ export function usePieMenuState({
       recognizingIdsRef.current.delete(cardId);
     }
   }, [cardsRef, groupsRef, pushHistory, setCards, setGroups, showToast, onRecognitionReport]);
+
+  const handleRecognizeImage = useCallback(async (cardId: string, mode: ImageRecognitionMode) => {
+    const selectedIds = activePieMenu?.selectedCardIds && activePieMenu.selectedCardIds.has(cardId) && activePieMenu.selectedCardIds.size > 1
+      ? [...activePieMenu.selectedCardIds]
+      : [cardId];
+
+    const targetCards = cardsRef.current.filter((c) => selectedIds.includes(c.id) && c.type === 'image' && !recognizingIdsRef.current.has(c.id));
+    if (targetCards.length === 0) return;
+
+    setActivePieMenu(null);
+    setResolutionPanel(null);
+    showToast(targetCards.length > 1 ? `正在识别 ${targetCards.length} 张图片...` : (mode === 'link' ? '正在识别图片原链接...' : '正在识别图片文字...'));
+    await Promise.all(targetCards.map((c) => recognizeSingleImage(c.id, mode)));
+  }, [activePieMenu, cardsRef, recognizeSingleImage, showToast]);
 
   const handleConfirmCandidate = useCallback(async (url: string) => {
     const panel = resolutionPanel;

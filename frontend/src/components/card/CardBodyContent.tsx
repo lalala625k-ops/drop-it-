@@ -3,6 +3,7 @@ import { Card } from '../../types';
 import { isFeishuUrl } from '../../utils/feishu';
 import { SiteLogo } from '../SiteLogo';
 import { textCardSize } from '../../utils/textCardSize';
+import { imageRatioCache } from '../../utils/imageCardRatio';
 
 interface CardBodyContentProps {
   card: Card;
@@ -30,9 +31,24 @@ export const CardBodyContent: React.FC<CardBodyContentProps> = ({
   const isFeishu = card.type === 'web' && isFeishuUrl(card.url);
 
   const titleInputRef = useRef<HTMLInputElement>(null);
+  const titleRef = useRef<HTMLDivElement>(null);
   const footerRef = useRef<HTMLDivElement>(null);
   const adjustedKeyRef = useRef<string | null>(null);
   const textInputRef = useRef<HTMLTextAreaElement>(null);
+
+  const handleTextChange = (content: string) => {
+    if (card.type !== 'text') {
+      onTextEdit(card.id, { content });
+      return;
+    }
+    const size = textCardSize(content);
+    const width = size.width * contentScale;
+    const height = (size.height + (card.tags?.length ? 32 : 0)) * contentScale;
+    onTextEdit(card.id, {
+      content,
+      ...(!card.sizeLocked ? { width, height } : {}),
+    });
+  };
 
   const finishTextEdit = (content: string) => {
     if (card.type !== 'text') return;
@@ -100,17 +116,30 @@ export const CardBodyContent: React.FC<CardBodyContentProps> = ({
   };
 
   const handleImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
-    if (card.sizeLocked) return;
     const img = e.currentTarget;
     if (img.naturalWidth && img.naturalHeight) {
       const ratio = img.naturalWidth / img.naturalHeight;
-      const imgHeight = card.width / ratio;
-      const footerH = footerRef.current?.offsetHeight || 68;
-      const targetHeight = Math.round(imgHeight + footerH);
-      const key = `${card.id}_${card.image}_${Math.round(card.width)}`;
-      if (Math.abs(card.height - targetHeight) > 4 && adjustedKeyRef.current !== key) {
-        adjustedKeyRef.current = key;
-        onUpdate(card.id, { height: targetHeight });
+      imageRatioCache.set(card.id, ratio);
+      if (card.image) imageRatioCache.set(card.image, ratio);
+
+      if (card.sizeLocked) return;
+      if (card.type === 'web') {
+        const imgHeight = card.width / ratio;
+        const footerH = footerRef.current?.offsetHeight || 68;
+        const targetHeight = Math.round(imgHeight + footerH);
+        const key = `${card.id}_${card.image}_${Math.round(card.width)}`;
+        if (Math.abs(card.height - targetHeight) > 4 && adjustedKeyRef.current !== key) {
+          adjustedKeyRef.current = key;
+          onUpdate(card.id, { height: targetHeight });
+        }
+      } else if (card.type === 'image') {
+        const titleH = titleRef.current?.offsetHeight || (card.title ? 24 : 0);
+        const targetHeight = Math.round(card.width / ratio + titleH);
+        const key = `${card.id}_${card.image}_${Math.round(card.width)}_${titleH}`;
+        if (Math.abs(card.height - targetHeight) > 4 && adjustedKeyRef.current !== key) {
+          adjustedKeyRef.current = key;
+          onUpdate(card.id, { height: targetHeight });
+        }
       }
     }
   };
@@ -119,6 +148,7 @@ export const CardBodyContent: React.FC<CardBodyContentProps> = ({
   const renderWebFooter = (isCompact = false) => (
     <div
       ref={footerRef}
+      data-web-footer
       className={`bg-paper flex flex-col justify-center ${
         isCompact ? 'w-full flex-1 p-4 relative overflow-hidden' : 'flex-shrink-0 p-3.5 border-t border-ink/20'
       }`}
@@ -199,19 +229,24 @@ export const CardBodyContent: React.FC<CardBodyContentProps> = ({
       return (
         <div className="w-full h-full flex flex-col overflow-hidden relative rounded-none bg-paper text-ink">
           {card.title && (
-            <div className="px-3.5 py-1 bg-stone/20 text-ink/70 text-[10px] font-mono uppercase tracking-[0.05em] truncate border-b border-ink/10 select-none">
+            <div
+              ref={titleRef}
+              data-card-title
+              className="px-3.5 py-1 bg-stone/20 text-ink/70 text-[10px] font-mono uppercase tracking-[0.05em] truncate border-b border-ink/10 select-none flex-shrink-0"
+            >
               {card.title}
             </div>
           )}
-          <div className="flex-1 bg-stone/20 flex items-center justify-center overflow-hidden relative">
+          <div className="flex-1 flex items-center justify-center overflow-hidden relative min-h-0 bg-paper">
             <img
               src={card.image}
               alt={card.title || 'Image'}
-              className="w-full h-full object-contain pointer-events-none"
+              className="w-full h-full object-cover pointer-events-none"
               referrerPolicy="no-referrer"
               draggable={false}
               loading="lazy"
               decoding="async"
+              onLoad={handleImageLoad}
             />
             {card.tags && card.tags.length > 0 && (
               <div className="absolute bottom-2 left-2 flex flex-wrap gap-1 z-10 pointer-events-none">
@@ -232,12 +267,12 @@ export const CardBodyContent: React.FC<CardBodyContentProps> = ({
         <div className="w-full h-full flex flex-col overflow-hidden rounded-none bg-paper text-ink select-none">
           {showHeaderArea ? (
             <>
-              <div className="w-full flex-1 bg-stone/20 overflow-hidden relative flex items-center justify-center pointer-events-none min-h-0">
+              <div className="w-full flex-1 overflow-hidden relative flex items-center justify-center pointer-events-none min-h-0 bg-paper">
                 {card.image && !imgLoadError && (
                   <img
                     src={card.image}
                     alt={card.title || 'Web preview'}
-                    className="w-full h-full object-contain pointer-events-none"
+                    className="w-full h-full object-cover pointer-events-none"
                     referrerPolicy="no-referrer"
                     loading="lazy"
                     decoding="async"
@@ -278,7 +313,7 @@ export const CardBodyContent: React.FC<CardBodyContentProps> = ({
               tabIndex={isSelected ? 0 : -1}
               placeholder="空白便签"
               onFocus={onTextEditStart}
-              onChange={(event) => onTextEdit(card.id, { content: event.target.value })}
+              onChange={(event) => handleTextChange(event.target.value)}
               onBlur={(event) => {
                 clearTextSelection(event.target);
                 finishTextEdit(event.target.value);

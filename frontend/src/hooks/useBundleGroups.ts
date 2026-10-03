@@ -184,8 +184,7 @@ export function useBundleGroups({ cardsRef, setCards, groupsRef, setGroups, sele
     saveStateDebounced(tree.cards, tree.groups);
     setSelectedCardIds(new Set());
     setSelectedGroupIds(new Set([id]));
-    showToast(`已将 ${members.length} 张卡片打组`);
-  }, [cardsRef, groupsRef, pushHistory, selectedCardIdsRef, setCards, setGroups, setSelectedCardIds, setSelectedGroupIds, showToast]);
+  }, [cardsRef, groupsRef, pushHistory, selectedCardIdsRef, setCards, setGroups, setSelectedCardIds, setSelectedGroupIds]);
 
   const updateBundle = useCallback((id: string, changes: Partial<Group>) => {
     pushHistory(cardsRef.current, groupsRef.current);
@@ -217,8 +216,7 @@ export function useBundleGroups({ cardsRef, setCards, groupsRef, setGroups, sele
     setGroups(nextGroups);
     saveStateDebounced(nextCards, nextGroups);
     setSelectedGroupIds(new Set());
-    showToast('已解散 Group，卡片已保留');
-  }, [cardsRef, groupsRef, pushHistory, setCards, setGroups, setSelectedGroupIds, showToast]);
+  }, [cardsRef, groupsRef, pushHistory, setCards, setGroups, setSelectedGroupIds]);
 
   const detachCardFromBundle = useCallback((cardId: string) => {
     const card = cardsRef.current.find((item) => item.id === cardId);
@@ -241,8 +239,7 @@ export function useBundleGroups({ cardsRef, setCards, groupsRef, setGroups, sele
     setGroups(nextGroups);
     saveStateDebounced(settledCards, nextGroups);
     if (!hasMembers) setSelectedGroupIds(new Set());
-    showToast('卡片已脱离 Group');
-  }, [cardsRef, groupsRef, pushHistory, setCards, setGroups, setSelectedGroupIds, showToast]);
+  }, [cardsRef, groupsRef, pushHistory, setCards, setGroups, setSelectedGroupIds]);
 
   const disconnectCardParent = useCallback((cardId: string) => {
     const card = cardsRef.current.find((item) => item.id === cardId);
@@ -251,8 +248,7 @@ export function useBundleGroups({ cardsRef, setCards, groupsRef, setGroups, sele
     const nextCards = cardsRef.current.map((item) => item.id === cardId ? { ...item, groupId: null } : item);
     setCards(nextCards);
     saveStateDebounced(nextCards, groupsRef.current);
-    showToast('已断开卡片与父物体的连线');
-  }, [cardsRef, groupsRef, pushHistory, setCards, showToast]);
+  }, [cardsRef, groupsRef, pushHistory, setCards]);
 
   const disconnectBundleParent = useCallback((bundleId: string, parentId: string) => {
     if (!cardsRef.current.some((card) => card.bundleId === bundleId && card.groupId === parentId)
@@ -265,8 +261,7 @@ export function useBundleGroups({ cardsRef, setCards, groupsRef, setGroups, sele
     setCards(nextCards);
     setGroups(nextGroups);
     saveStateDebounced(nextCards, nextGroups);
-    showToast('已断开整个 Group 与该父物体的连线');
-  }, [cardsRef, groupsRef, pushHistory, setCards, setGroups, showToast]);
+  }, [cardsRef, groupsRef, pushHistory, setCards, setGroups]);
 
   const resetBundleSize = useCallback((id: string) => {
     const storedGroup = groupsRef.current.find((group) => group.id === id && group.kind === 'bundle');
@@ -298,8 +293,7 @@ export function useBundleGroups({ cardsRef, setCards, groupsRef, setGroups, sele
     setCards(nextCards);
     setGroups(nextGroups);
     saveStateDebounced(nextCards, nextGroups);
-    showToast('Group 已恢复默认大小');
-  }, [cardsRef, groupsRef, pushHistory, setCards, setGroups, showToast]);
+  }, [cardsRef, groupsRef, pushHistory, setCards, setGroups]);
 
   const startBundleResize = useCallback((id: string, corner: BundleResizeCorner, event: React.MouseEvent) => {
     if (event.button !== 0) return;

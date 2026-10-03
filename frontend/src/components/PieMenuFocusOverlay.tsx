@@ -15,22 +15,31 @@ export const PieMenuFocusOverlay: React.FC<Props> = ({ activePieMenu, cards, vie
     const holder = focusRef.current;
     const canvas = document.querySelector('[data-canvas-surface]');
     if (!holder || !canvas) return;
-    const id = activePieMenu.target.kind === 'card'
-      ? activePieMenu.target.card.id : activePieMenu.target.group.id;
-    const bundle = activePieMenu.target.kind === 'bundle'
-      ? canvas.querySelector<HTMLElement>(`[data-bundle-id="${CSS.escape(id)}"]`) : null;
-    const source = bundle || (activePieMenu.target.kind !== 'card'
-      ? canvas.querySelector<HTMLElement>(`[data-group-id="${CSS.escape(id)}"]`)
-      : canvas.querySelector<HTMLElement>(`[data-card-id="${CSS.escape(id)}"]`));
-    if (!source) return;
-
-    const sources: HTMLElement[] = [source];
-    if (bundle) {
-      const memberIds = new Set(cards.filter((card) => card.bundleId === id).map((card) => card.id));
-      canvas.querySelectorAll<HTMLElement>('[data-card-id]').forEach((element) => {
-        if (memberIds.has(element.dataset.cardId || '')) sources.push(element);
+    const sources: HTMLElement[] = [];
+    if (activePieMenu.target.kind === 'card') {
+      const selectedIds = activePieMenu.selectedCardIds && activePieMenu.selectedCardIds.size > 1
+        ? activePieMenu.selectedCardIds
+        : new Set([activePieMenu.target.card.id]);
+      selectedIds.forEach((cardId) => {
+        const el = canvas.querySelector<HTMLElement>(`[data-card-id="${CSS.escape(cardId)}"]`);
+        if (el) sources.push(el);
       });
+    } else {
+      const id = activePieMenu.target.group.id;
+      const bundle = activePieMenu.target.kind === 'bundle'
+        ? canvas.querySelector<HTMLElement>(`[data-bundle-id="${CSS.escape(id)}"]`) : null;
+      const source = bundle || canvas.querySelector<HTMLElement>(`[data-group-id="${CSS.escape(id)}"]`);
+      if (source) {
+        sources.push(source);
+        if (bundle) {
+          const memberIds = new Set(cards.filter((card) => card.bundleId === id).map((card) => card.id));
+          canvas.querySelectorAll<HTMLElement>('[data-card-id]').forEach((element) => {
+            if (memberIds.has(element.dataset.cardId || '')) sources.push(element);
+          });
+        }
+      }
     }
+    if (sources.length === 0) return;
     holder.replaceChildren(...sources.map((element) => {
       const rect = element.getBoundingClientRect();
       const wrapper = document.createElement('div');
@@ -49,7 +58,7 @@ export const PieMenuFocusOverlay: React.FC<Props> = ({ activePieMenu, cards, vie
       return wrapper;
     }));
     return () => holder.replaceChildren();
-  }, [activePieMenu.target, cards, viewport.x, viewport.y, viewport.zoom]);
+  }, [activePieMenu.target, activePieMenu.selectedCardIds, cards, viewport.x, viewport.y, viewport.zoom]);
 
   return <>
     <div className="fixed inset-0 z-[10001] bg-ink/30 backdrop-blur-sm animate-in fade-in duration-150 pointer-events-none" aria-hidden="true" />

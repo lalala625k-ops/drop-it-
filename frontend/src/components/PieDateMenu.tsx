@@ -31,21 +31,23 @@ export interface PieDateMenuProps {
   onDisconnectParent: () => void;
   onGroupColor: (color: string) => void;
   onClose: () => void;
+  selectedCardIds?: Set<string>;
+  onUniformWidth?: () => void;
 }
 
 type MenuMode = 'menu' | 'date-input' | 'title-input' | 'tag-search';
-type ItemId = 'title' | 'date' | 'now' | 'reset_size' | 'reparse' | 'ungroup'
+type ItemId = 'title' | 'date' | 'now' | 'reset_size' | 'uniform_width' | 'reparse' | 'ungroup'
   | 'detach' | 'disconnect' | 'tag' | 'ocr' | 'link';
 
 const ITEM_SIZE = 72;
 const RADIUS = 180;
 const EXTENT = 228;
 const SLOT_ANGLES: Record<ItemId, number> = {
-  title: -60, date: -30, now: 0, reset_size: 30, reparse: 60,
+  title: -60, date: -30, now: 0, reset_size: 30, uniform_width: 60, reparse: 90,
   ungroup: 90, detach: 120, disconnect: 150, tag: 180, ocr: 210, link: 240,
 };
 
-function menuSlots(target: PieMenuTarget, parentId?: string | null): PieMenuSlot<ItemId>[] {
+function menuSlots(target: PieMenuTarget, allCards: Card[], selectedCardIds?: Set<string>, parentId?: string | null): PieMenuSlot<ItemId>[] {
   const ids: ItemId[] = ['title'];
   if (target.kind !== 'parent') {
     ids.push('date', 'now', 'reset_size', 'tag');
@@ -53,6 +55,12 @@ function menuSlots(target: PieMenuTarget, parentId?: string | null): PieMenuSlot
       ids.push('ungroup');
       if (parentId) ids.push('disconnect');
     } else if (target.kind === 'card') {
+      const selectedCards = selectedCardIds && selectedCardIds.has(target.card.id) && selectedCardIds.size > 1
+        ? allCards.filter((c) => selectedCardIds.has(c.id))
+        : [target.card];
+      if (selectedCards.length > 1) {
+        ids.push('uniform_width');
+      }
       if (target.card.type === 'web' && target.card.url) ids.push('reparse');
       if (target.card.type === 'image') ids.push('ocr', 'link');
       if (target.card.bundleId) ids.push('detach');
@@ -77,16 +85,32 @@ function parentColorAt(pointer: Point, center: Point, scale: number): string | n
   return groupGradientColor((index + 0.5) / 64);
 }
 
+const SHORTCUT_MAP: Record<ItemId, string> = {
+  title: 'Ctrl+H',
+  date: 'Ctrl+T',
+  now: 'Ctrl+Shift+T',
+  reset_size: 'Ctrl+R',
+  uniform_width: 'Ctrl+Shift+R',
+  reparse: 'Ctrl+U',
+  ungroup: 'Ctrl+Shift+G',
+  detach: 'Ctrl+Alt+G',
+  disconnect: 'Ctrl+Shift+P',
+  tag: 'Ctrl+L',
+  ocr: 'Ctrl+I',
+  link: 'Ctrl+Shift+I',
+};
+
 export const PieDateMenu: React.FC<PieDateMenuProps> = ({
   target, allCards, parentId, centerPosition, currentPointerPosition, isRightMouseDown,
   onConfirmDate, onConfirmTitle, onToggleTag, onReparseLink, onRecognizeImage,
   onUngroup, onResetSize, onDetachFromBundle, onDisconnectParent, onGroupColor, onClose,
+  selectedCardIds, onUniformWidth,
 }) => {
   const [mode, setMode] = useState<MenuMode>('menu');
   const { hint, showHint, hideHint } = useMenuShortcutHint();
   const rightHeldRef = useRef(isRightMouseDown);
   const { center, scale } = placePieMenu(centerPosition, EXTENT);
-  const slots = useMemo(() => menuSlots(target, parentId), [target, parentId]);
+  const slots = useMemo(() => menuSlots(target, allCards, selectedCardIds, parentId), [target, allCards, selectedCardIds, parentId]);
   const card = target.kind === 'card' ? target.card : undefined;
   const reminder = target.kind === 'card' ? target.card.reminder : target.group.reminder;
   const tags = target.kind === 'card' ? target.card.tags : target.group.tags;
@@ -96,32 +120,68 @@ export const PieDateMenu: React.FC<PieDateMenuProps> = ({
   const activeItem = isDragging && !overColor
     ? pieSectorAt(currentPointerPosition, center, scale, RADIUS, slots) : null;
 
+  useEffect(() => {
+    if (activeItem && SHORTCUT_MAP[activeItem]) {
+      const idx = slots.findIndex((s) => s.id === activeItem);
+      if (idx >= 0) {
+        const p = pieSlotPoint({ x: EXTENT, y: EXTENT }, RADIUS, slots[idx].angle);
+        const screenX = center.x + (p.x - EXTENT) * scale;
+        const screenY = center.y + (p.y - EXTENT) * scale;
+        showHint({
+          getBoundingClientRect: () => ({
+            left: screenX - (ITEM_SIZE * scale) / 2,
+            top: screenY - (ITEM_SIZE * scale) / 2,
+            width: ITEM_SIZE * scale,
+            height: ITEM_SIZE * scale,
+            bottom: screenY + (ITEM_SIZE * scale) / 2,
+            right: screenX + (ITEM_SIZE * scale) / 2,
+          } as DOMRect),
+        } as HTMLElement, SHORTCUT_MAP[activeItem] || null);
+      }
+    } else if (!activeItem) {
+      hideHint();
+    }
+  }, [activeItem, center.x, center.y, scale, slots]);
+
   const chooseItem = (id: ItemId) => {
-    if (slots.find((slot) => slot.id === id)?.disabled) return;
+    if (slots.find((slot) => slot.id === id)?.disabled) {
+      onClose();
+      return;
+    }
     if (id === 'title') setMode('title-input');
     else if (id === 'date') setMode('date-input');
-    else if (id === 'now') onConfirmDate(getNowFormatted().formattedText);
+    else if (id === 'now') { onConfirmDate(getNowFormatted().formattedText); onClose(); }
     else if (id === 'tag') setMode('tag-search');
-    else if (id === 'reset_size') onResetSize();
-    else if (id === 'reparse') onReparseLink();
-    else if (id === 'ocr' || id === 'link') onRecognizeImage(id);
-    else if (id === 'ungroup') onUngroup();
-    else if (id === 'detach') onDetachFromBundle();
-    else if (id === 'disconnect') onDisconnectParent();
+    else if (id === 'reset_size') { onResetSize(); onClose(); }
+    else if (id === 'uniform_width') { onUniformWidth?.(); onClose(); }
+    else if (id === 'reparse') { onReparseLink(); onClose(); }
+    else if (id === 'ocr' || id === 'link') { onRecognizeImage(id); onClose(); }
+    else if (id === 'ungroup') { onUngroup(); onClose(); }
+    else if (id === 'detach') { onDetachFromBundle(); onClose(); }
+    else if (id === 'disconnect') { onDisconnectParent(); onClose(); }
   };
 
   useEffect(() => {
+    if (mode !== 'menu') return;
     if (isRightMouseDown || !rightHeldRef.current) return;
     rightHeldRef.current = false;
-    if (!pieGestureMoved(centerPosition, currentPointerPosition)) return;
+    hideHint();
+    if (!pieGestureMoved(centerPosition, currentPointerPosition)) {
+      onClose();
+      return;
+    }
     if (target.kind === 'parent') {
       const color = parentColorAt(currentPointerPosition, center, scale);
-      if (color) { onGroupColor(color); return; }
+      if (color) {
+        onGroupColor(color);
+        onClose();
+        return;
+      }
     }
     const item = pieSectorAt(currentPointerPosition, center, scale, RADIUS, slots);
     if (item) chooseItem(item);
     else onClose();
-  }, [isRightMouseDown, currentPointerPosition, mode]);
+  }, [isRightMouseDown, currentPointerPosition, mode, centerPosition, center, scale, slots, target.kind, onGroupColor, onClose]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -133,14 +193,15 @@ export const PieDateMenu: React.FC<PieDateMenuProps> = ({
 
   const label = (id: ItemId) => ({
     title: '标题', date: '时间', now: 'NOW', reset_size: '复位',
-    reparse: '解析', ungroup: '解组', detach: '解组', disconnect: '断线',
+    uniform_width: '等宽', reparse: '解析', ungroup: '解组', detach: '解组', disconnect: '断线',
     tag: '标签', ocr: '识字', link: '溯源',
   })[id];
   const description = (id: ItemId) => ({
     title: target.kind === 'card' ? '设置悬浮标题'
       : target.kind === 'bundle' ? '设置 Group 标题' : '重命名父物体',
     date: '设置或清除时间', now: '标记当前时间', reset_size: '恢复默认大小',
-    reparse: '重新解析链接', ungroup: target.kind === 'parent' ? '解散父物体并保留关联对象' : '解散 Group 并保留成员',
+    uniform_width: '统一选中图片宽度', reparse: '重新解析链接',
+    ungroup: target.kind === 'parent' ? '解散父物体并保留关联对象' : '解散 Group 并保留成员',
     detach: '从当前 Group 中移出卡片', disconnect: '断开上级连线',
     tag: '搜索和管理标签', ocr: '识别图片文字', link: '识别图片原链接',
   })[id];
@@ -160,8 +221,7 @@ export const PieDateMenu: React.FC<PieDateMenuProps> = ({
           return <button key={id} type="button" data-pie-item={id} disabled={disabled}
             aria-label={description(id)} title={description(id)} onClick={() => chooseItem(id)}
             style={{ left: point.x - ITEM_SIZE / 2, top: point.y - ITEM_SIZE / 2 }}
-            onMouseEnter={(event) => showHint(event.currentTarget,
-              id === 'reset_size' ? 'Ctrl+O（选中后）' : id === 'ungroup' ? 'Ctrl+Shift+G（选中后）' : null)}
+            onMouseEnter={(event) => showHint(event.currentTarget, SHORTCUT_MAP[id] || null)}
             onMouseLeave={hideHint}
             className={`absolute flex h-[72px] w-[72px] items-center justify-center rounded-full border-2 px-1.5 text-center transition-colors duration-100 disabled:opacity-40 ${activeItem === id
               ? 'border-ink bg-paper text-ink' : 'border-ink bg-ink text-paper hover:bg-paper hover:text-ink'}`}>

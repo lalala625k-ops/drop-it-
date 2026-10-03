@@ -37,7 +37,7 @@ interface UseCanvasInteractionsProps {
   beginMarqueeSelection: (isShift: boolean) => void;
   selectCard: (id: string, isShift: boolean) => void;
   selectGroup: (id: string, isShift: boolean) => void;
-  updateMarqueeSelection: (rect: { x: number; y: number; width: number; height: number }, cards: Card[], groups: Group[]) => void;
+  updateMarqueeSelection: (rect: { x: number; y: number; width: number; height: number }, cards: Card[], groups: Group[], isCtrl?: boolean) => void;
   isSpacePressedRef: MutableRefObject<boolean>;
   isAltPressedRef: MutableRefObject<boolean>;
   isShiftPressedRef: MutableRefObject<boolean>;
@@ -58,7 +58,7 @@ interface UseCanvasInteractionsProps {
   commitState: (cards: Card[], groups: Group[]) => void;
   pushHistory: (cards: Card[], groups: Group[]) => void;
   showToast: (msg: string) => void;
-  onOpenPieMenu: (card: Card, clientX: number, clientY: number) => void;
+  onOpenPieMenu: (card: Card, clientX: number, clientY: number, multiSelectedCardIds?: Set<string>) => void;
   onOpenGroupPieMenu: (group: Group, clientX: number, clientY: number, rightMouseDown: boolean) => void;
   onUpdatePieMenuPointer: (clientX: number, clientY: number) => void;
   onReleasePieMenuMouseDown: (clientX: number, clientY: number) => void;
@@ -161,8 +161,11 @@ export function useCanvasInteractions({
         g.id === (groupEl.getAttribute('data-group-id') || groupEl.getAttribute('data-bundle-id')));
       if (targetCard || targetGroup) {
         dragModeRef.current = 'pie-menu';
-        if (targetCard) onOpenPieMenu(targetCard, e.clientX, e.clientY);
-        else if (targetGroup) onOpenGroupPieMenu(targetGroup, e.clientX, e.clientY, true);
+        if (targetCard) {
+          const multi = selectedCardIdsRef.current.has(targetCard.id) && selectedCardIdsRef.current.size > 1
+            ? selectedCardIdsRef.current : undefined;
+          onOpenPieMenu(targetCard, e.clientX, e.clientY, multi);
+        } else if (targetGroup) onOpenGroupPieMenu(targetGroup, e.clientX, e.clientY, true);
       }
       return;
     }
@@ -263,7 +266,8 @@ export function useCanvasInteractions({
           height: Math.abs(currentWorld.y - dragStartRef.current.worldY),
         };
         const collapsedIds = new Set(groupsRef.current.filter((group) => group.kind === 'bundle' && group.collapsed).map((group) => group.id));
-        updateMarqueeSelection(rect, cardsRef.current.filter((card) => !card.bundleId || !collapsedIds.has(card.bundleId)), groupsRef.current);
+        const isCtrl = e.ctrlKey || e.metaKey;
+        updateMarqueeSelection(rect, cardsRef.current.filter((card) => !card.bundleId || !collapsedIds.has(card.bundleId)), groupsRef.current, isCtrl);
         return;
       }
 
@@ -428,7 +432,6 @@ export function useCanvasInteractions({
             commitState(cardsRef.current.map((card) => card.id === sourceId
               ? { ...card, groupId: null } : card), groupsRef.current);
           }
-          showToast('已断开上级连接');
           return;
         }
         if (target && !canAttachTreeNode(activeSourceId, target.id, cardsRef.current, groupsRef.current)) {
@@ -447,7 +450,6 @@ export function useCanvasInteractions({
             ? { ...card, groupId: targetId } : card);
           commitState(nextCards, groupsRef.current);
         }
-        showToast(targetId ? '已连接树状分支' : '已断开分支连线');
         return;
       }
 
@@ -465,7 +467,7 @@ export function useCanvasInteractions({
         clickedCardInfoRef.current = null;
         hasCardDraggedRef.current = false;
 
-        let { nextCards, toastMessage } = finishCardDrag(
+        let { nextCards } = finishCardDrag(
           cardsRef.current,
           groupsRef.current,
           selectedCardIdsRef.current,
@@ -477,14 +479,12 @@ export function useCanvasInteractions({
             dragStartCardsRef.current, dragStartGroupsRef.current);
           nextCards = result.nextCards;
           nextGroups = result.nextGroups;
-          if (result.addedCount) toastMessage = `已将 ${result.addedCount} 张卡片加入 Group`;
         }
         dragStartCardsRef.current = [];
         dragStartGroupsRef.current = [];
         draggingCardBranchIdsRef.current.clear();
         draggingCardBranchBundleIdsRef.current.clear();
         commitState(nextCards, nextGroups);
-        if (toastMessage) showToast(toastMessage);
       } else if (mode === 'drag-group') {
         isolatedDragRef.current = false;
         const gId = draggingGroupIdRef.current;
@@ -503,7 +503,6 @@ export function useCanvasInteractions({
         if (hasGroupDraggedRef.current && gId) {
           hasGroupDraggedRef.current = false;
           commitState(cardsRef.current, groupsRef.current);
-          showToast('已移动所选 Group');
         }
         dragStartCardsRef.current = [];
         dragStartGroupsRef.current = [];

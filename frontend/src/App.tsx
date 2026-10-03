@@ -15,6 +15,7 @@ import { RecognitionDiagnostics } from './components/RecognitionDiagnostics';
 import { RecognitionReport } from './utils/recognizeCardImage';
 
 import { computeCardFocusViewport } from './utils/canvas';
+import { getNowFormatted } from './utils/dateParser';
 import { exportBackup, getLocalData, getRemoteRevision, currentServerRevision } from './utils/storage';
 import { getParentLinkage } from './utils/groupRelations';
 
@@ -265,6 +266,13 @@ export default function App() {
   });
 
   const resetObjectSize = useCallback((id: string) => {
+    const selectedIds = selectedCardIdsRef.current;
+    if (selectedIds.has(id) && selectedIds.size > 1) {
+      selectedIds.forEach((cardId) => {
+        actions.handleResetCardSize(cardId);
+      });
+      return;
+    }
     const group = groupsRef.current.find((item) => item.id === id && item.kind === 'bundle');
     if (group) { bundles.resetBundleSize(group.id); return; }
     const card = cardsRef.current.find((item) => item.id === id);
@@ -273,6 +281,120 @@ export default function App() {
       bundles.resetBundleSize(card.bundleId);
     } else actions.handleResetCardSize(card.id);
   }, [actions.handleResetCardSize, bundles.resetBundleSize, cardsRef, groupsRef]);
+
+  const handleDetachCardFromBundle = useCallback((cardId: string) => {
+    const selectedIds = selectedCardIdsRef.current;
+    if (selectedIds.has(cardId) && selectedIds.size > 1) {
+      selectedIds.forEach((cid) => bundles.detachCardFromBundle(cid));
+      return;
+    }
+    bundles.detachCardFromBundle(cardId);
+  }, [bundles]);
+
+  const handleDisconnectCardParent = useCallback((cardId: string) => {
+    const selectedIds = selectedCardIdsRef.current;
+    if (selectedIds.has(cardId) && selectedIds.size > 1) {
+      selectedIds.forEach((cid) => bundles.disconnectCardParent(cid));
+      return;
+    }
+    bundles.disconnectCardParent(cardId);
+  }, [bundles]);
+
+  const getSelectedSingleId = useCallback(() => {
+    return [...selectedGroupIdsRef.current][0] || [...selectedCardIdsRef.current][0] || null;
+  }, []);
+
+  const handleShortcutEditTitle = useCallback(() => {
+    const id = getSelectedSingleId();
+    if (!id) return;
+    const card = cardsRef.current.find((c) => c.id === id);
+    if (card) {
+      pieMenu.openPieMenu(card, window.innerWidth / 2, window.innerHeight / 2);
+      return;
+    }
+    const group = groupsRef.current.find((g) => g.id === id);
+    if (group) {
+      pieMenu.openGroupPieMenu(group, window.innerWidth / 2, window.innerHeight / 2);
+    }
+  }, [getSelectedSingleId, pieMenu]);
+
+  const handleShortcutClearTitle = useCallback(() => {
+    const id = getSelectedSingleId();
+    if (!id) return;
+    pieMenu.handleConfirmPieTitle(id, null);
+  }, [getSelectedSingleId, pieMenu]);
+
+  const handleShortcutSetTime = useCallback(() => {
+    const id = getSelectedSingleId();
+    if (!id) return;
+    const card = cardsRef.current.find((c) => c.id === id);
+    if (card) {
+      pieMenu.openPieMenu(card, window.innerWidth / 2, window.innerHeight / 2);
+      return;
+    }
+    const group = groupsRef.current.find((g) => g.id === id);
+    if (group) {
+      pieMenu.openGroupPieMenu(group, window.innerWidth / 2, window.innerHeight / 2);
+    }
+  }, [getSelectedSingleId, pieMenu]);
+
+  const handleShortcutSetNow = useCallback(() => {
+    const id = getSelectedSingleId();
+    if (!id) return;
+    const now = getNowFormatted().formattedText;
+    pieMenu.handleConfirmPieDate(id, now);
+  }, [getSelectedSingleId, pieMenu]);
+
+  const handleShortcutManageTags = useCallback(() => {
+    const id = getSelectedSingleId();
+    if (!id) return;
+    const card = cardsRef.current.find((c) => c.id === id);
+    if (card) {
+      pieMenu.openPieMenu(card, window.innerWidth / 2, window.innerHeight / 2);
+      return;
+    }
+    const group = groupsRef.current.find((g) => g.id === id);
+    if (group) {
+      pieMenu.openGroupPieMenu(group, window.innerWidth / 2, window.innerHeight / 2);
+    }
+  }, [getSelectedSingleId, pieMenu]);
+
+  const handleShortcutDisconnectParent = useCallback(() => {
+    const cardId = [...selectedCardIdsRef.current][0];
+    if (cardId) {
+      bundles.disconnectCardParent(cardId);
+      return;
+    }
+    const groupId = [...selectedGroupIdsRef.current][0];
+    if (groupId) {
+      const group = groupsRef.current.find((g) => g.id === groupId && g.kind === 'bundle');
+      const parentId = group?.parentIds?.[0];
+      if (parentId) bundles.disconnectBundleParent(groupId, parentId);
+    }
+  }, [bundles]);
+
+  const handleShortcutDetachFromBundle = useCallback(() => {
+    const cardId = [...selectedCardIdsRef.current][0];
+    if (cardId) bundles.detachCardFromBundle(cardId);
+  }, [bundles]);
+
+  const handleShortcutReparseLink = useCallback(() => {
+    const cardId = [...selectedCardIdsRef.current].find((id) =>
+      cardsRef.current.some((c) => c.id === id && c.type === 'web' && c.url));
+    if (cardId) pieMenu.handleReparseLink(cardId);
+  }, [pieMenu]);
+
+  const handleShortcutImageOCR = useCallback(() => {
+    const cardId = [...selectedCardIdsRef.current].find((id) =>
+      cardsRef.current.some((c) => c.id === id && c.type === 'image'));
+    if (cardId) pieMenu.handleRecognizeImage(cardId, 'ocr');
+  }, [pieMenu]);
+
+  const handleShortcutImageLink = useCallback(() => {
+    const cardId = [...selectedCardIdsRef.current].find((id) =>
+      cardsRef.current.some((c) => c.id === id && c.type === 'image'));
+    if (cardId) pieMenu.handleRecognizeImage(cardId, 'link');
+  }, [pieMenu]);
 
   const { isShiftPressedRef, isSpacePressedRef, isAltPressedRef } = useShortcuts({
     onNewCard: () => actions.createCardAtCursor({ type: 'text', content: '', width: 260, height: 180 }),
@@ -296,6 +418,18 @@ export default function App() {
     onSearch: () => setIsSearchOpen(true),
     onMinimapOpen: minimap.handleMinimapOpen,
     onMinimapClose: minimap.handleMinimapClose,
+    onEditTitle: handleShortcutEditTitle,
+    onClearTitle: handleShortcutClearTitle,
+    onSetTime: handleShortcutSetTime,
+    onSetNow: handleShortcutSetNow,
+    onManageTags: handleShortcutManageTags,
+    onDisconnectParent: handleShortcutDisconnectParent,
+    onDetachFromBundle: handleShortcutDetachFromBundle,
+    onUniformWidth: actions.handleUniformCardWidth,
+    onReparseLink: handleShortcutReparseLink,
+    onRecognizeImageOCR: handleShortcutImageOCR,
+    onRecognizeImageLink: handleShortcutImageLink,
+    onFitCanvas: () => handleCanvasDoubleClick(canvasCards, fitGroups),
   });
 
   useEffect(() => {
@@ -434,8 +568,11 @@ export default function App() {
         const object = (e.target as HTMLElement).closest('[data-card-id], [data-group-id], [data-bundle-id]');
         const editable = (e.target as HTMLElement).closest('textarea, input, [contenteditable="true"]');
         if (editable && !(e.button === 2 && object?.hasAttribute('data-card-id'))) return;
+        const isOverlayUI = (e.target as HTMLElement).closest(
+          '[data-modal], [data-dialog], [role="dialog"], button, select, input, textarea'
+        );
+        if (isOverlayUI && !object) return;
         if (e.button === 2) {
-          if (!(e.target as HTMLElement).closest('[data-canvas-surface]')) return;
           e.preventDefault();
           e.stopPropagation();
           if (object) canvasInteractions.handleMouseDown(e);
@@ -564,10 +701,11 @@ export default function App() {
         onUngroupBundle={bundles.ungroupBundle}
         onResetObjectSize={resetObjectSize}
         onDissolveParent={dissolveParent}
-        onDetachCardFromBundle={bundles.detachCardFromBundle}
-        onDisconnectCardParent={bundles.disconnectCardParent}
+        onDetachCardFromBundle={handleDetachCardFromBundle}
+        onDisconnectCardParent={handleDisconnectCardParent}
         onDisconnectGroupParent={bundles.disconnectBundleParent}
         onClosePieMenu={pieMenu.closePieMenu}
+        onUniformWidth={() => actions.handleUniformCardWidth(pieMenu.activePieMenu?.selectedCardIds)}
         isSearchOpen={isSearchOpen}
         onCloseSearch={() => setIsSearchOpen(false)}
         onSelectSearchCard={(c) => {
