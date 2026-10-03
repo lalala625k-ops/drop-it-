@@ -255,7 +255,7 @@ export default function App() {
     .map((group) => [group.id, (group.outlinePadding ?? 18) / 18])), [groups]);
 
   // Paste & Shortcuts
-  const { handlePaste, handleDroppedData } = useClipboardPaste({
+  const { handlePaste, handleDroppedData, pasteFromSystemClipboard } = useClipboardPaste({
     createCardAtCursor: actions.createCardAtCursor,
     updateCard: actions.handleCardUpdate,
     stageCopiedObjects: clipboard.stagePaste,
@@ -527,13 +527,13 @@ export default function App() {
       case 'parent': actions.handleCreateNewParentAtCursor(); break;
       case 'group': bundles.createBundle(); break;
       case 'search': setIsSearchOpen(true); break;
-      case 'copy': clipboard.handleCopy(); break;
-      case 'paste': clipboard.stagePaste(clipboard.copiedObjectsRef.current); break;
+      case 'copy': void clipboard.handleCopy(); break;
+      case 'paste': void pasteFromSystemClipboard(); break;
       case 'fit': handleCanvasDoubleClick(canvasCards, fitGroups); break;
       case 'uniform-width': actions.handleUniformCardWidth(); break;
     }
   }, [actions, bundles, canvasCards, canvasMenuPosition, clipboard, fitGroups, handleCanvasDoubleClick,
-    mouseScreenRef, mouseWorldRef, viewportRef]);
+    mouseScreenRef, mouseWorldRef, pasteFromSystemClipboard, viewportRef]);
 
   return (
     <div

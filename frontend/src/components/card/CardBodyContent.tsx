@@ -4,6 +4,7 @@ import { isFeishuUrl } from '../../utils/feishu';
 import { SiteLogo } from '../SiteLogo';
 import { textCardSize } from '../../utils/textCardSize';
 import { imageRatioCache } from '../../utils/imageCardRatio';
+import { MarkdownView } from '../MarkdownView';
 
 interface CardBodyContentProps {
   card: Card;
@@ -25,6 +26,7 @@ export const CardBodyContent: React.FC<CardBodyContentProps> = ({
   contentScale,
 }) => {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [isEditingText, setIsEditingText] = useState(!card.content);
   const [textEditorEpoch, setTextEditorEpoch] = useState(0);
   const [titleText, setTitleText] = useState(card.title || '');
   const [imgLoadError, setImgLoadError] = useState(false);
@@ -70,12 +72,21 @@ export const CardBodyContent: React.FC<CardBodyContentProps> = ({
   };
 
   useEffect(() => {
-    if (!isSelected && textInputRef.current) {
-      if (document.activeElement === textInputRef.current) textInputRef.current.blur();
-      clearTextSelection(textInputRef.current);
-      setTextEditorEpoch((epoch) => epoch + 1);
+    if (!isSelected) {
+      setIsEditingText(false);
+      if (textInputRef.current) {
+        if (document.activeElement === textInputRef.current) textInputRef.current.blur();
+        clearTextSelection(textInputRef.current);
+        setTextEditorEpoch((epoch) => epoch + 1);
+      }
     }
   }, [isSelected]);
+
+  useEffect(() => {
+    if (isEditingText && isSelected && textInputRef.current) {
+      textInputRef.current.focus();
+    }
+  }, [isEditingText, isSelected]);
 
   useEffect(() => {
     setTitleText(card.title || '');
@@ -292,6 +303,7 @@ export const CardBodyContent: React.FC<CardBodyContentProps> = ({
 
     case 'text':
     default:
+      const shouldShowEditor = isSelected && (isEditingText || !card.content);
       return (
         <div
           className="w-full h-full flex flex-col rounded-none overflow-hidden bg-paper text-ink"
@@ -303,33 +315,56 @@ export const CardBodyContent: React.FC<CardBodyContentProps> = ({
           <div
             className={`flex-1 p-3.5 flex flex-col overflow-hidden bg-paper ${isSelected ? 'pointer-events-auto' : 'pointer-events-none select-none'}`}
             style={{ backgroundColor: card.color || undefined }}
+            onClick={() => {
+              if (isSelected && !isEditingText) {
+                setIsEditingText(true);
+              }
+            }}
           >
-            <textarea
-              key={textEditorEpoch}
-              ref={textInputRef}
-              data-text-editor
-              value={card.content || ''}
-              readOnly={!isSelected}
-              tabIndex={isSelected ? 0 : -1}
-              placeholder="空白便签"
-              onFocus={onTextEditStart}
-              onChange={(event) => handleTextChange(event.target.value)}
-              onBlur={(event) => {
-                clearTextSelection(event.target);
-                finishTextEdit(event.target.value);
-                // A blurred native textarea can keep painting its old selection.
-                setTextEditorEpoch((epoch) => epoch + 1);
-              }}
-              onMouseDown={(event) => { if (isSelected && !event.ctrlKey && !event.metaKey) event.stopPropagation(); }}
-              onDoubleClick={(event) => event.stopPropagation()}
-              onKeyDown={(event) => {
-                if (event.key === 'Escape') { event.stopPropagation(); textInputRef.current?.blur(); }
-              }}
-              className={`w-full h-full bg-transparent text-ink text-[15px] leading-[1.40] font-retina font-normal text-left resize-none border-0 outline-none p-0 m-0 placeholder:text-ink/40 placeholder:italic ${
-                isSelected ? 'overflow-auto select-text cursor-text' : 'overflow-hidden pointer-events-none select-none'
-              }`}
-              style={{ overflowWrap: 'anywhere', color: card.textColor || undefined }}
-            />
+            {shouldShowEditor ? (
+              <textarea
+                key={textEditorEpoch}
+                ref={textInputRef}
+                data-text-editor
+                value={card.content || ''}
+                readOnly={!isSelected}
+                tabIndex={isSelected ? 0 : -1}
+                placeholder="空白便签（支持 Markdown）"
+                onFocus={onTextEditStart}
+                onChange={(event) => handleTextChange(event.target.value)}
+                onBlur={(event) => {
+                  clearTextSelection(event.target);
+                  finishTextEdit(event.target.value);
+                  setIsEditingText(false);
+                  setTextEditorEpoch((epoch) => epoch + 1);
+                }}
+                onMouseDown={(event) => { if (isSelected && !event.ctrlKey && !event.metaKey) event.stopPropagation(); }}
+                onDoubleClick={(event) => event.stopPropagation()}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') {
+                    event.stopPropagation();
+                    setIsEditingText(false);
+                    textInputRef.current?.blur();
+                  }
+                }}
+                className="w-full h-full bg-transparent text-ink text-[15px] leading-[1.40] font-retina font-normal text-left resize-none border-0 outline-none p-0 m-0 placeholder:text-ink/40 placeholder:italic overflow-auto select-text cursor-text"
+                style={{ overflowWrap: 'anywhere', color: card.textColor || undefined }}
+              />
+            ) : (
+              <div
+                className="w-full h-full cursor-text overflow-auto"
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  setIsEditingText(true);
+                }}
+              >
+                {card.content ? (
+                  <MarkdownView content={card.content} color={card.textColor || undefined} />
+                ) : (
+                  <span className="italic opacity-40 text-[15px] leading-[1.40] font-retina select-none">空白便签（支持 Markdown）</span>
+                )}
+              </div>
+            )}
           </div>
           {card.tags && card.tags.length > 0 && (
             <div

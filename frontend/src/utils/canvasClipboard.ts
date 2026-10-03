@@ -86,3 +86,54 @@ export function cloneClipboardSnapshot(
   }));
   return { cards, groups };
 }
+
+export async function cardImageToPngBlob(imageUrl: string): Promise<Blob | null> {
+  if (!imageUrl) return null;
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) { resolve(null); return; }
+        ctx.drawImage(img, 0, 0);
+        canvas.toBlob((blob) => resolve(blob), 'image/png');
+      } catch {
+        void fetch(imageUrl)
+          .then((r) => r.blob())
+          .then((b) => resolve(b))
+          .catch(() => resolve(null));
+      }
+    };
+    img.onerror = () => {
+      void fetch(imageUrl)
+        .then((r) => r.blob())
+        .then((b) => resolve(b))
+        .catch(() => resolve(null));
+    };
+    img.src = imageUrl;
+  });
+}
+
+export function getExternalClipboardText(snapshot: CanvasClipboardSnapshot): string {
+  if (!snapshot.cards.length && !snapshot.groups.length) return '';
+  const lines: string[] = [];
+  for (const card of snapshot.cards) {
+    if (card.url) {
+      lines.push(card.url);
+    } else if (card.type === 'text' && card.content) {
+      lines.push(card.content);
+    } else if (card.headerTitle || card.title) {
+      lines.push(card.headerTitle || card.title || '');
+    } else if (card.type === 'image' && card.image) {
+      lines.push(card.image);
+    }
+  }
+  for (const group of snapshot.groups) {
+    if (group.title) lines.push(group.title);
+  }
+  return lines.filter(Boolean).join('\n');
+}

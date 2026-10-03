@@ -1,6 +1,7 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Group } from '../types';
 import { groupColorText } from '../utils/groupColors';
+import { parseMarkdownHeading } from '../utils/headingUtils';
 
 interface GroupComponentProps {
   group: Group;
@@ -132,14 +133,30 @@ const GroupComponentInner: React.FC<GroupComponentProps> = ({
               onClick={(e) => e.stopPropagation()}
               onMouseDown={(e) => e.stopPropagation()}
             />
-          ) : (
-            <div
-              className="w-full overflow-hidden break-words text-[12px] leading-[1.2] font-bold font-retina"
-              style={{ display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2 }}
-            >
-              {group.title}
-            </div>
-          )}
+          ) : (() => {
+            const parsedHeading = parseMarkdownHeading(group.title);
+            const isL1 = parsedHeading.hasMarkdownPrefix && parsedHeading.level === 1;
+            const isL2 = parsedHeading.hasMarkdownPrefix && parsedHeading.level === 2;
+            const headingSize = isL1 ? '20px' : isL2 ? '16px' : '12px';
+            const headingWeight = isL1 ? 900 : 700;
+            const headingLeading = isL1 ? 1.15 : 1.2;
+            return (
+              <div
+                className="w-full overflow-hidden break-words font-retina tracking-tight"
+                style={{
+                  display: '-webkit-box',
+                  WebkitBoxOrient: 'vertical',
+                  WebkitLineClamp: isL1 ? 2 : 3,
+                  fontSize: headingSize,
+                  fontWeight: headingWeight,
+                  lineHeight: headingLeading,
+                }}
+                title={parsedHeading.cleanText || group.title}
+              >
+                {parsedHeading.cleanText || group.title}
+              </div>
+            );
+          })()}
           <div title={`${childCount} 个关联子卡片`} className="text-[11px] leading-none font-bold font-mono opacity-70">
             {childCount}
           </div>

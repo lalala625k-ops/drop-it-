@@ -71,7 +71,7 @@ const BundleGroupComponentInner: React.FC<Props> = ({ group, members, selected, 
     ))}
     {parsedTitle.cleanText && <div className="absolute bottom-full right-0 pointer-events-auto select-none cursor-move font-retina"
       style={{ left: 40 * titleScale, marginBottom: 6 * titleScale,
-        fontSize: (parsedTitle.level === 2 ? 27 : 36) * titleScale,
+        fontSize: (parsedTitle.level === 2 ? 18 : 24) * titleScale,
         lineHeight: parsedTitle.level === 2 ? 1.2 : 1.15,
         fontWeight: parsedTitle.level === 2 ? 700 : 900 }}
       onMouseDown={handleOutlineMouseDown} onContextMenu={openMenu} title={parsedTitle.cleanText}>

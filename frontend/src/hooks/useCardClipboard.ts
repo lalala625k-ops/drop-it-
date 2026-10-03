@@ -1,7 +1,7 @@
 import { useRef, useState, useCallback, MutableRefObject } from 'react';
 import { Card, Group } from '../types';
 import { saveStateDebounced } from '../utils/storage';
-import { CanvasClipboardSnapshot, cloneClipboardSnapshot, collectClipboardSnapshot } from '../utils/canvasClipboard';
+import { CanvasClipboardSnapshot, cloneClipboardSnapshot, collectClipboardSnapshot, cardImageToPngBlob, getExternalClipboardText } from '../utils/canvasClipboard';
 import { normalizeTreeData } from '../utils/groupRelations';
 
 interface UseCardClipboardProps {
@@ -29,24 +29,51 @@ export function useCardClipboard({
   const [pendingPaste, setPendingPaste] = useState<CanvasClipboardSnapshot | null>(null);
   const [pasteScreenPosition, setPasteScreenPosition] = useState(mouseScreenRef.current);
 
-  const handleCopy = useCallback(() => {
+  const handleCopy = useCallback(async () => {
     const snapshot = collectClipboardSnapshot(cardsRef.current, groupsRef.current,
       selectedCardIdsRef.current, selectedGroupIdsRef.current);
     if (!snapshot.cards.length && !snapshot.groups.length) return;
     copiedObjectsRef.current = snapshot;
-    if (navigator.clipboard?.writeText) {
-      void navigator.clipboard.writeText(JSON.stringify({
-        __type: 'infinite-canvas-objects', cards: snapshot.cards, groups: snapshot.groups,
-      })).catch(() => { /* The in-memory snapshot remains available. */ });
-    }
-  }, [cardsRef, groupsRef, selectedCardIdsRef, selectedGroupIdsRef]);
 
-  const stagePaste = useCallback((snapshot: CanvasClipboardSnapshot) => {
-    if (!snapshot.cards.length && !snapshot.groups.length) return;
-    setPasteScreenPosition({ ...mouseScreenRef.current });
-    setPendingPaste({ cards: snapshot.cards.map((card) => ({ ...card })),
-      groups: snapshot.groups.map((group) => ({ ...group })) });
-  }, [mouseScreenRef]);
+    const externalText = getExternalClipboardText(snapshot);
+    const sessionToken = `${Date.now()}_${snapshot.cards.map((c) => c.id).join(',')}`;
+    try {
+      sessionStorage.setItem('canvas_clipboard_token', sessionToken);
+      sessionStorage.setItem('canvas_clipboard_text', externalText);
+    } catch { /* ignore */ }
+
+    // If an image card is copied, write actual PNG image blob to OS clipboard for external apps
+    const imageCard = snapshot.cards.find((c) => c.type === 'image' && c.image);
+    if (imageCard && imageCard.image && typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {
+      try {
+        const blob = await cardImageToPngBlob(imageCard.image);
+        if (blob) {
+          const itemData: Record<string, Blob> = {
+            'image/png': blob,
+          };
+          if (externalText) {
+            itemData['text/plain'] = new Blob([externalText], { type: 'text/plain' });
+          }
+          await navigator.clipboard.write([new ClipboardItem(itemData)]);
+          showToast(imageCard.url ? '已复制图片及原链接到系统剪贴板' : '已复制图片到系统剪贴板');
+          return;
+        }
+      } catch {
+        // Fallback to text copy below
+      }
+    }
+
+    if (externalText && navigator.clipboard?.writeText) {
+      void navigator.clipboard.writeText(externalText).then(() => {
+        const hasUrl = snapshot.cards.some((c) => c.url);
+        if (hasUrl) {
+          showToast(snapshot.cards.length === 1 ? '已复制卡片链接到系统剪贴板' : '已复制多条链接到系统剪贴板');
+        } else {
+          showToast('已复制内容到系统剪贴板');
+        }
+      }).catch(() => { /* The in-memory snapshot remains available. */ });
+    }
+  }, [cardsRef, groupsRef, selectedCardIdsRef, selectedGroupIdsRef, showToast]);
 
   const commitSnapshot = useCallback((snapshot: CanvasClipboardSnapshot, target: { x: number; y: number }) => {
     pushHistory(cardsRef.current, groupsRef.current);
@@ -61,6 +88,13 @@ export function useCardClipboard({
     setSelectedGroupIds(new Set(cloned.groups.map((group) => group.id)));
   }, [cardsRef, groupsRef, maxZIndexRef, pushHistory, setCards, setGroups,
     setSelectedCardIds, setSelectedGroupIds]);
+
+  const stagePaste = useCallback((snapshot: CanvasClipboardSnapshot) => {
+    if (!snapshot.cards.length && !snapshot.groups.length) return;
+    // Direct paste at mouse cursor position
+    commitSnapshot(snapshot, mouseWorldRef.current);
+    showToast('已在光标处粘贴');
+  }, [commitSnapshot, mouseWorldRef, showToast]);
 
   const commitPendingPaste = useCallback((target: { x: number; y: number }) => {
     mouseWorldRef.current = target;
