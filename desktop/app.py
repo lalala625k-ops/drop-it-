@@ -1,9 +1,11 @@
 """
 Infinite Canvas Note - Native Edge WebView2 Desktop Launcher
+Lightweight (~25MB memory overhead), single-process lifecycle, zero Electron bloat.
+
 Supports:
 1. Vite HMR (Live Hot Reloading in the open window without restart)
 2. Production Standalone Mode (F5 / Ctrl+R in-window reload)
-3. Single-process lifecycle (zero Electron bloat, ~50MB RAM)
+3. Automatic port allocation and graceful shutdown
 """
 
 import os
@@ -15,10 +17,11 @@ import subprocess
 import urllib.request
 from pathlib import Path
 
-# Ensure root directory is in sys.path
-PROJECT_ROOT = Path(__file__).resolve().parent
+# Project root is one level above the desktop folder
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+# Set desktop environment markers
 os.environ["PINBOARD_DESKTOP"] = "1"
 dist_dir = PROJECT_ROOT / "frontend" / "dist"
 if dist_dir.is_dir():
@@ -100,7 +103,6 @@ def start_desktop():
                 shell=True,
                 creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
             )
-            # Wait up to 5 seconds for Vite port 5173
             for _ in range(25):
                 if is_port_active("127.0.0.1", 5173):
                     break
@@ -120,7 +122,7 @@ def start_desktop():
         print("=" * 60)
         print(f"【独立运行模式】服务地址: {server_url}")
         print("在当前窗口内随时可按 [F5] 或 [Ctrl+R] 刷新重载，无需重启窗口！")
-        print("如需体验代码保存即生效的无感热更新，请运行 run_desktop_dev.bat")
+        print("如需体验代码保存即生效的无感热更新，请运行 desktop/run_dev.bat")
         print("=" * 60)
 
     # 3. Create Edge WebView2 Window
@@ -135,7 +137,6 @@ def start_desktop():
     )
 
     try:
-        # debug=True allows F12 devtools and right click inspect
         webview.start(gui="edgechromium", debug=use_dev_mode or "--debug" in sys.argv)
     finally:
         server.should_exit = True
