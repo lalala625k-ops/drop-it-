@@ -93,6 +93,13 @@ export function useShortcuts({
 
       const isCtrlOrMeta = e.ctrlKey || e.metaKey;
 
+      // F5 or Ctrl+R: Hot reload current window
+      if (e.key === 'F5' || (isCtrlOrMeta && (e.key === 'r' || e.key === 'R'))) {
+        e.preventDefault();
+        window.location.reload();
+        return;
+      }
+
       // Shift + 1: Fit Canvas
       if (e.shiftKey && !isCtrlOrMeta && !e.altKey && e.key === '!') {
         e.preventDefault();

@@ -1,6 +1,9 @@
 """
 Infinite Canvas Note - Native Edge WebView2 Desktop Launcher
-Lightweight (~25MB memory overhead), single-process lifecycle, zero Electron bloat.
+Supports:
+1. Vite HMR (Live Hot Reloading in the open window without restart)
+2. Production Standalone Mode (F5 / Ctrl+R in-window reload)
+3. Single-process lifecycle (zero Electron bloat, ~50MB RAM)
 """
 
 import os
@@ -8,6 +11,7 @@ import sys
 import time
 import socket
 import threading
+import subprocess
 import urllib.request
 from pathlib import Path
 
@@ -15,11 +19,20 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-# Set desktop environment markers
 os.environ["PINBOARD_DESKTOP"] = "1"
 dist_dir = PROJECT_ROOT / "frontend" / "dist"
 if dist_dir.is_dir():
     os.environ["PINBOARD_WEB_DIR"] = str(dist_dir)
+
+
+def is_port_active(host: str, port: int) -> bool:
+    """Check if a specific TCP port is listening."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(0.3)
+            return s.connect_ex((host, port)) == 0
+    except Exception:
+        return False
 
 
 def find_free_port(preferred_port: int = 8000) -> int:
@@ -32,7 +45,6 @@ def find_free_port(preferred_port: int = 8000) -> int:
         except OSError:
             pass
 
-    # Pick an ephemeral port
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("127.0.0.1", 0))
         return s.getsockname()[1]
@@ -55,10 +67,13 @@ def start_desktop():
     import uvicorn
     import webview
 
+    force_dev = "--dev" in sys.argv
+    dev_server_active = is_port_active("127.0.0.1", 5173)
+
+    # 1. Start or check backend service
     port = find_free_port(8000)
     server_url = f"http://127.0.0.1:{port}"
 
-    # Configure uvicorn local server
     config = uvicorn.Config(
         "backend.main:app",
         host="127.0.0.1",
@@ -67,19 +82,51 @@ def start_desktop():
         access_log=False,
     )
     server = uvicorn.Server(config)
-
-    # Start FastAPI in a background daemon thread
     server_thread = threading.Thread(target=server.run, daemon=True, name="BackendServerThread")
     server_thread.start()
 
-    # Wait for server ready
     if not wait_for_server(server_url):
-        print(f"[Desktop] Error: Backend server did not respond at {server_url} within timeout.")
+        print(f"[Desktop] Warning: Backend server took long to respond at {server_url}.")
 
-    # Create native Edge WebView2 window
+    # 2. Determine target URL and mode
+    use_dev_mode = force_dev or dev_server_active
+
+    if use_dev_mode:
+        if not dev_server_active:
+            print("[Desktop] 正在启动前端 Vite 热更新服务...")
+            subprocess.Popen(
+                ["npm", "run", "dev"],
+                cwd=str(PROJECT_ROOT / "frontend"),
+                shell=True,
+                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
+            )
+            # Wait up to 5 seconds for Vite port 5173
+            for _ in range(25):
+                if is_port_active("127.0.0.1", 5173):
+                    break
+                time.sleep(0.2)
+
+        target_url = "http://127.0.0.1:5173"
+        window_title = "便签看板 - [热更新开发模式] (Vite HMR Active)"
+        print("=" * 60)
+        print("【热更新模式已激活】")
+        print("当前窗口直连 Vite 热更新开发服务 (http://127.0.0.1:5173)")
+        print("在代码编辑器中修改并保存任意文件，窗口内将毫秒级自动热替换！")
+        print("无需关闭窗口，无需重新启动，画布位置与状态完全保留。")
+        print("=" * 60)
+    else:
+        target_url = server_url
+        window_title = "便签看板 - Infinite Canvas Note"
+        print("=" * 60)
+        print(f"【独立运行模式】服务地址: {server_url}")
+        print("在当前窗口内随时可按 [F5] 或 [Ctrl+R] 刷新重载，无需重启窗口！")
+        print("如需体验代码保存即生效的无感热更新，请运行 run_desktop_dev.bat")
+        print("=" * 60)
+
+    # 3. Create Edge WebView2 Window
     window = webview.create_window(
-        title="便签看板 - Infinite Canvas Note",
-        url=server_url,
+        title=window_title,
+        url=target_url,
         width=1400,
         height=900,
         min_size=(900, 600),
@@ -87,11 +134,10 @@ def start_desktop():
         text_select=True,
     )
 
-    # Start webview using native Edge Chromium (WebView2)
     try:
-        webview.start(gui="edgechromium", debug=False)
+        # debug=True allows F12 devtools and right click inspect
+        webview.start(gui="edgechromium", debug=use_dev_mode or "--debug" in sys.argv)
     finally:
-        # Graceful shutdown of uvicorn when window closes
         server.should_exit = True
         sys.exit(0)
 
