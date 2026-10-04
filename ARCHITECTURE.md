@@ -1,6 +1,6 @@
 # 项目架构与文件职责地图
 
-> **同步日期**：2026-10-02。本文说明当前工作区的结构、职责和数据流；产品行为见 `product_requirements_document.md`，视觉规则见 `DESIGN_SPEC.md`，站点保护范围见 `image_parsing_rules.md`。已知实现限制应明确记录，不能把计划能力写成已经实现。
+> **同步日期**：2026-10-04。本文说明当前工作区的结构、职责和数据流；产品行为见 `product_requirements_document.md`，视觉规则见 `DESIGN_SPEC.md`，站点保护范围见 `image_parsing_rules.md`。已知实现限制应明确记录，不能把计划能力写成已经实现。
 
 > **桌面版隔离**：桌面壳、打包脚本和使用说明保留在独立的 `codex/desktop-app` 分支与 `C:/Users/lalala/.codex/worktrees/desktop-app/note` 检出目录；网页版主目录不再包含这些专用文件。后续网页版提交不会自动进入桌面分支，待网页版稳定后再移植。两版现有运行数据仍可共用 `%LOCALAPPDATA%/InfiniteCanvasNote/data`；`backend/services/storage.py` 使用 SQLite WAL 和修订号，`backend/routes/migration.py` 接收旧浏览器数据。画布视口裁剪使用空间索引，远景大量对象由 `FarCanvas.tsx` 简化绘制。
 
@@ -90,7 +90,8 @@
 | `ClipboardPastePreview.tsx` | 粘贴确认前显示跟随鼠标的卡片、父物体、Group 和连线轮廓 |
 | `useGroups.ts` | 父物体状态、命名、新建和绑定；默认 120px 与四色循环默认色；空父物体新建执行有限次数的 5px 避障；`refreshGroupBounds` 保持独立节点边界 |
 | `useHistory.ts` | 最多 30 份卡片/父物体深拷贝快照，提供 `pushHistory` 和 `undo`，当前没有 redo |
-| `useShortcuts.ts` | 新建、删除、撤销、编组/解散、Alt/Ctrl+方向键对齐、复制、搜索、备份和粘贴监听；M 键及失焦控制小地图 |
+| `useCanvasPins.ts` | 管理 1~8 编号图钉、localStorage 持久化（`pinboard_canvas_pins_v1`）、280ms 缓动平滑跳转动画、添加/更新/删除及弹窗提示交互 |
+| `useShortcuts.ts` | 新建、删除、撤销、编组/解散、Alt/Ctrl+方向键对齐、复制、搜索、备份、粘贴监听；Ctrl+1~8 快捷跳转图钉（无对应图钉时保留 Ctrl+1 全览）；M 键及失焦控制小地图 |
 | `useMinimapState.ts` | M 键控制常驻小地图的大图模式，几何映射在 `MinimapNav.tsx` |
 | `usePieMenuState.ts` | 以卡片、外层 Group、父物体的显式目标类型记录当前轮盘；处理日期/标题/标签及父物体颜色、图片识别、网页重新解析、历史与保存 |
 
@@ -110,7 +111,10 @@
 | `ParentLinkLines.tsx` | 树中任意上级节点到卡片或 Group 的 SVG 连线；两端都落在对象边界的最近点，选中节点会加粗其后代分支 |
 | `SnapGuides.tsx` | 拖动磁吸的水平/垂直辅助虚线 |
 | `SelectionBox.tsx` | 框选矩形 |
-| `CanvasCommandMenu.tsx` | 空白处右键按下立即打开原有八项方位的命令饼菜单，按钮使用两个汉字的短标签；与对象菜单共用扇区手势、边缘定位与取消规则 |
+| `CanvasCommandMenu.tsx` | 空白处右键按下立即打开九等分扇区的命令饼菜单（便签、父级、成组、图钉、搜索、复制、粘贴、全览、均宽），按钮使用两个汉字的短标签；与对象菜单共用扇区手势、边缘定位与取消规则 |
+| `CanvasPinsLayer.tsx` | 在画布表面世界坐标渲染图钉标记（`📌 N · Ctrl+N`），支持缩放自适应、点击平滑跳转、右键或右上角 ✕ 快速移除 |
+| `PinInputModal.tsx` | 极简直角印刷风格的图钉编号选择弹窗，提供 1~8 数字快速选择方格与占用提示，支持键盘单键 1~8 快速确认 |
+| `MarkdownContent.tsx` | 全局 4 处指定位置的 Markdown 语法解析与排版渲染组件，严格匹配一级 24px (900)、二级 18px (700) 与正文 15px (400) 字阶 |
 | `GradientColorArc.tsx` | 将黄、粉、蓝、白渐变绘成左侧 64 档半圆环，悬停显示白色主环与凸出的当前色扇形，按点击或拖动位置取色并提交 |
 | `CanvasModals.tsx` | 聚合对象轮盘、焦点蒙版、搜索及小地图；解析显式菜单目标并按对象能力连接操作 |
 | `PieMenuFocusOverlay.tsx` | 对象轮盘打开时覆盖搜索弹窗的 Ink/30 模糊蒙版，并把当前对象的 DOM 快照原位显示在蒙版上方；外层 Group 同时保留可见的组内卡片 |
