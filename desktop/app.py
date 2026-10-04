@@ -14,6 +14,7 @@ import time
 import socket
 import threading
 import subprocess
+import traceback
 import urllib.request
 from pathlib import Path
 
@@ -21,7 +22,15 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-# Set desktop environment markers
+# Safe console output on Windows
+try:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 os.environ["PINBOARD_DESKTOP"] = "1"
 dist_dir = PROJECT_ROOT / "frontend" / "dist"
 if dist_dir.is_dir():
@@ -34,6 +43,15 @@ def is_port_active(host: str, port: int) -> bool:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.settimeout(0.3)
             return s.connect_ex((host, port)) == 0
+    except Exception:
+        return False
+
+
+def check_backend_alive(port: int) -> bool:
+    """Check if an active backend is already responding on the port."""
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/health", timeout=0.8) as resp:
+            return resp.status == 200
     except Exception:
         return False
 
@@ -62,51 +80,64 @@ def wait_for_server(url: str, timeout: float = 8.0) -> bool:
                 if resp.status == 200:
                     return True
         except Exception:
-            time.sleep(0.1)
+            time.sleep(0.15)
     return False
 
 
 def start_desktop():
-    import uvicorn
-    import webview
+    try:
+        import uvicorn
+        import webview
+    except ImportError as e:
+        print(f"[Error] Missing dependency: {e}")
+        print("Please ensure pywebview and uvicorn are installed.")
+        input("Press Enter to exit...")
+        sys.exit(1)
 
     force_dev = "--dev" in sys.argv
     dev_server_active = is_port_active("127.0.0.1", 5173)
-
-    # 1. Start or check backend service
-    port = find_free_port(8000)
-    server_url = f"http://127.0.0.1:{port}"
-
-    config = uvicorn.Config(
-        "backend.main:app",
-        host="127.0.0.1",
-        port=port,
-        log_level="warning",
-        access_log=False,
-    )
-    server = uvicorn.Server(config)
-    server_thread = threading.Thread(target=server.run, daemon=True, name="BackendServerThread")
-    server_thread.start()
-
-    if not wait_for_server(server_url):
-        print(f"[Desktop] Warning: Backend server took long to respond at {server_url}.")
-
-    # 2. Determine target URL and mode
     use_dev_mode = force_dev or dev_server_active
 
+    # 1. Manage backend server
+    # In dev mode, Vite proxies to port 8002 by default
+    backend_port = 8002 if use_dev_mode else find_free_port(8000)
+    server_url = f"http://127.0.0.1:{backend_port}"
+    server = None
+
+    if check_backend_alive(backend_port):
+        print(f"[Desktop] 本地后端服务已在运行中: {server_url}")
+    else:
+        print(f"[Desktop] 正在启动本地轻量服务: {server_url}")
+        config = uvicorn.Config(
+            "backend.main:app",
+            host="127.0.0.1",
+            port=backend_port,
+            log_level="warning",
+            access_log=False,
+        )
+        server = uvicorn.Server(config)
+        server_thread = threading.Thread(target=server.run, daemon=True, name="BackendServerThread")
+        server_thread.start()
+
+        if not wait_for_server(server_url):
+            print(f"[Desktop] Warning: Backend server took long to respond at {server_url}.")
+
+    # 2. Determine target URL and mode
+    vite_proc = None
     if use_dev_mode:
         if not dev_server_active:
-            print("[Desktop] 正在启动前端 Vite 热更新服务...")
-            subprocess.Popen(
+            print("[Desktop] 正在启动前端 Vite 热更新服务 (HMR)...")
+            vite_proc = subprocess.Popen(
                 ["npm", "run", "dev"],
                 cwd=str(PROJECT_ROOT / "frontend"),
                 shell=True,
                 creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
             )
-            for _ in range(25):
+            # Wait up to 15 seconds for Vite port 5173
+            for _ in range(60):
                 if is_port_active("127.0.0.1", 5173):
                     break
-                time.sleep(0.2)
+                time.sleep(0.25)
 
         target_url = "http://127.0.0.1:5173"
         window_title = "便签看板 - [热更新开发模式] (Vite HMR Active)"
@@ -138,10 +169,20 @@ def start_desktop():
 
     try:
         webview.start(gui="edgechromium", debug=use_dev_mode or "--debug" in sys.argv)
+    except Exception as e:
+        print(f"[Desktop] Webview window error: {e}")
+        traceback.print_exc()
+        input("Press Enter to exit...")
     finally:
-        server.should_exit = True
+        if server:
+            server.should_exit = True
         sys.exit(0)
 
 
 if __name__ == "__main__":
-    start_desktop()
+    try:
+        start_desktop()
+    except Exception as e:
+        print(f"[Fatal Error]: {e}")
+        traceback.print_exc()
+        input("Press Enter to exit...")
