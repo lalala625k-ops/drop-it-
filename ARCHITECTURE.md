@@ -20,6 +20,9 @@
 | `DESIGN_SPEC.md` | 默认视觉规则、主题色、标题字阶及实现差异 |
 | `image_parsing_rules.md` | 保护库、试验库、通用解析规则及迁移流程 |
 | `run_app.bat` | 启动 Vite（5173）和 Uvicorn（127.0.0.1:8000），打开浏览器 |
+| `启动桌面版.bat` | 根目录一键启动原生 Edge WebView2 轻量桌面版快捷入口（转调 `desktop/run.bat`） |
+| `desktop/` | 桌面端专属工程目录；包含 `app.py`（WebView2 引擎入口）、`run.bat`、`run_dev.bat`（HMR 热更新）、`update.bat` |
+| `DESKTOP_SPEC.md` | 桌面端技术栈、独立架构、PureRef 级渲染管线与运维说明专篇规范 |
 | `open_site.bat`、`local_site.pyw` | 无控制台的本机使用入口；后台由 FastAPI 在 127.0.0.1:5173 同时提供构建好的网页与 API，关闭 Codex 或浏览器后服务继续运行；需先生成 `frontend/dist` |
 | `LOCAL_USE.md` | 发布前本机使用、构建更新及故障排查说明 |
 | `backup_database.bat` | 从 SQLite 导出一致的 JSON 和资源到 `backend/data/` 独立 Git 仓库，再提交、拉取并推送 `origin/main` |
@@ -75,7 +78,7 @@
 | 文件 | 职责 |
 | :--- | :--- |
 | `useViewport.ts` | 视口和光标坐标、每档上滚 1.12 倍/下滚 0.88 倍的指针锚定缩放、单卡聚焦/还原、全览；以 `pinboard_viewport_v1`、200ms 防抖记忆视口 |
-| `useVirtualViewport.ts` | 未收起卡片超过 40 张或 Group/父物体超过 10 个时通过空间索引裁剪离屏对象；300 屏幕像素缓冲，选中对象和关联对象始终保留；返回可见卡片 ID 供连线裁剪 |
+| `useVirtualViewport.ts` | 空间视口严格虚拟化；移除 <=40 限制，基于视口边界与安全缓冲（350px/zoom）动态裁剪所有离屏对象，及时卸载 DOM 节点以释放浏览器解码显存；选中对象和关联对象始终保留；返回可见卡片 ID 供连线裁剪 |
 | `useCanvasInteractions.ts` | 鼠标手势状态机：平移、Alt+中键指针锚定连续缩放、框选、拖动、Ctrl+Shift 引线连接或单击断开、卡片缩放、轮盘；卡片与外层 Group 可连到卡片、Group 或圆形父物体，拒绝成环；普通拖动带动自身后代，Ctrl 拖动只移动当前对象（Group 含成员） |
 | `useCanvasActions.ts` | 新建、更新、删除、解散、编组、撤销、装箱、方向对齐、组外卡片恢复默认尺寸及全部卡片按平均宽度统一宽度；选中外层 Group 时展开成员卡片参与对齐，重算并保存组边界；`commitState` 更新卡片/父物体并排队保存 |
 | `useCanvasInit.ts` | 加载时把旧多父关系收敛为单父树，修正 Group 成员的文字缩放比例，保持旧父物体中心并统一尺寸为 120px；恢复视口或全览；注册关闭前刷新 |
@@ -90,8 +93,8 @@
 | `ClipboardPastePreview.tsx` | 粘贴确认前显示跟随鼠标的卡片、父物体、Group 和连线轮廓 |
 | `useGroups.ts` | 父物体状态、命名、新建和绑定；默认 120px 与四色循环默认色；空父物体新建执行有限次数的 5px 避障；`refreshGroupBounds` 保持独立节点边界 |
 | `useHistory.ts` | 最多 30 份卡片/父物体深拷贝快照，提供 `pushHistory` 和 `undo`，当前没有 redo |
-| `useCanvasPins.ts` | 管理 1~8 编号图钉、localStorage 持久化（`pinboard_canvas_pins_v1`）、拖拽位置更新、280ms 缓动平滑跳转动画、添加/更新/删除及弹窗提示交互 |
-| `useShortcuts.ts` | 新建、删除、撤销、编组/解散、Alt/Ctrl+方向键对齐、复制、搜索、备份、粘贴监听；Ctrl+1~8 快捷跳转图钉（无对应图钉时保留 Ctrl+1 全览）；M 键及失焦控制小地图 |
+| `useCanvasPins.ts` | 管理 1~8 编号图钉，支持本地 localStorage 极速响应与后端 SQLite（`/api/cards/pins`）双向持久化同步，拖拽位置更新、280ms 缓动平滑跳转动画、添加/更新/删除及弹窗提示交互 |
+| `useShortcuts.ts` | 新建、删除、撤销、编组/解散、Alt/Ctrl+方向键对齐、复制、搜索、备份、粘贴监听；Ctrl+1~8 快捷跳转图钉（无对应图钉时保留 Ctrl+1 全览）；F5 / Ctrl+R 支持窗口就地热刷新；M 键及失焦控制小地图 |
 | `useMinimapState.ts` | M 键控制常驻小地图的大图模式，几何映射在 `MinimapNav.tsx` |
 | `usePieMenuState.ts` | 以卡片、外层 Group、父物体的显式目标类型记录当前轮盘；处理日期/标题/标签及父物体颜色、图片识别、网页重新解析、历史与保存 |
 | `useSettings.ts` | 管理自定义快捷键映射与通用偏好（滚轮方向、小地图模式），保存在 `pinboard_settings_v1` |
@@ -133,12 +136,13 @@
 
 | 文件/目录 | 职责 |
 | :--- | :--- |
-| `main.py` | FastAPI/CORS、路由模块及 DynamicStaticFiles 动态资源挂载 |
-| `routes/cards.py` | CardModel、GroupModel、PersistencePayload；GET 全量读取，POST 按对象保存并校验基础修订号 |
-| `routes/assets.py` | POST `/api/upload-asset`；Base64 解码，取 SHA256 前 16 个十六进制字符命名去重，返回静态 URL |
+| `main.py` | FastAPI/CORS、路由模块、DynamicStaticFiles 动态资源挂载及启动时缩略图后台预热批处理 |
+| `routes/cards.py` | CardModel、GroupModel、PersistencePayload；GET 全量读取，POST 按对象保存校验修订号；GET/POST `/api/cards/pins` 图钉持久化同步 |
+| `routes/assets.py` | POST `/api/upload-asset` 上传原图并预生成 WebP 缩略图；GET `/api/thumbnails/{category}/{filename}` 动态或缓存提供 800px WebP 缩略图 |
 | `routes/parser.py` | POST `/api/recognize-image` 和 `/api/resolve-image` 支持上传文件、Base64 JSON、原始请求体；GET `/api/fetch-metadata` |
 | `routes/settings.py` | GET/POST `/api/settings/storage-path` 数据目录查询与迁移；POST `/api/archive/export` 完整打包导出；POST `/api/archive/import` 完整解压还原 |
-| `services/storage.py` | SQLite WAL 对象存储、修订号校验、force_replace_all 全量覆盖还原、旧 JSON 迁移及 Git 快照导出 |
+| `services/storage.py` | SQLite WAL 对象存储、修订号校验、图钉 `meta` 持久化、force_replace_all 全量覆盖还原、旧 JSON 迁移及 Git 快照导出 |
+| `services/thumbnail_service.py` | PureRef 级 WebP 800px 缩略图金字塔管道，支持透明通道保留、EXIF 自动校正、原子落盘与已有媒体后台批量预生成 |
 | `services/ocr_service.py` | RapidOCR 初始化、Pillow 预处理、首行标题和全文；不可用或出错时返回失败结果 |
 | `services/screenshot_link_service.py` | 保留从 OCR 文本提取 B 站/X 直接链接或 BV 号的兼容函数；原有文字搜索不再进入主溯源链路 |
 | `services/bilibili_reverse_service.py` | 保留 OCR 几何提取与 B 站官方备用搜索接口；反向搜索与受保护的正向解析器独立 |

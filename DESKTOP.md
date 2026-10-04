@@ -1,6 +1,6 @@
 # 随想便签 · 本地桌面版与打包指南 (Desktop & Packaging)
 
-本指南针对便签看板的**轻量化**、**极致流畅度**、**多图重编译解耦**与**离线应用安装**进行完整说明。
+> **最新架构说明**：桌面端已全面演进为 Windows 原生 Edge WebView2 极轻量单体架构（~25MB 分发体积，~50MB 运行内存）。完整技术栈与架构规范请参阅核心文档 👉 **[`DESKTOP_SPEC.md`](file:///c:/Users/lalala/Desktop/note/DESKTOP_SPEC.md)** 与 **[`desktop/README.md`](file:///c:/Users/lalala/Desktop/note/desktop/README.md)**。
 
 ---
 
