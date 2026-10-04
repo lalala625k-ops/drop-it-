@@ -1,19 +1,18 @@
 @echo off
-chcp 65001 >nul
+setlocal
 echo ========================================================
-echo       随想便签 · 桌面版实时开发与预览运行
+echo       Infinite Canvas Note - Desktop Live Dev
 echo ========================================================
 echo.
-
+echo [1/2] Compiling frontend changes...
 cd /d "%~dp0frontend"
-echo 正在编译前端最新改动...
 call npm run build
 if %errorlevel% neq 0 (
-    echo [错误] 前端编译失败！
+    echo [ERROR] Frontend build failed!
     pause
     exit /b %errorlevel%
 )
-
+echo.
+echo [2/2] Launching desktop application window...
 cd /d "%~dp0desktop"
-echo 正在启动桌面窗口...
 call npm start
