@@ -13,6 +13,7 @@ export interface ShortcutSettings {
 export interface GeneralSettings {
   invertWheelZoom: boolean; // 是否反转滚轮缩放方向 (默认 false: 上滚放大)
   minimapMode: 'always' | 'press_m'; // 小地图模式: 'always' 常驻左下角, 'press_m' 仅按M呼出
+  showFps: boolean; // 是否在左上角显示实时帧率 (默认 false)
 }
 
 export interface AppSettings {
@@ -33,6 +34,7 @@ export const DEFAULT_SHORTCUTS: ShortcutSettings = {
 export const DEFAULT_GENERAL: GeneralSettings = {
   invertWheelZoom: false,
   minimapMode: 'always',
+  showFps: false,
 };
 
 export const DEFAULT_SETTINGS: AppSettings = {

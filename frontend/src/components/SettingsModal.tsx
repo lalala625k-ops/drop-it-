@@ -425,14 +425,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <circle cx={490} cy={70} r="2.5" fill="#a8a7a2" />
 
             {/* Branch 3 to General Cards */}
-            <line x1={bGeneral.x} y1={bGeneral.y} x2={-170} y2={360} stroke="#a8a7a2" strokeWidth="1.5" />
-            <circle cx={-170} cy={360} r="2.5" fill="#a8a7a2" />
+            <line x1={bGeneral.x} y1={bGeneral.y} x2={-414} y2={340} stroke="#a8a7a2" strokeWidth="1.5" />
+            <circle cx={-414} cy={340} r="2.5" fill="#a8a7a2" />
 
-            <line x1={bGeneral.x} y1={bGeneral.y} x2={110} y2={360} stroke="#a8a7a2" strokeWidth="1.5" />
-            <circle cx={110} cy={360} r="2.5" fill="#a8a7a2" />
+            <line x1={bGeneral.x} y1={bGeneral.y} x2={-138} y2={340} stroke="#a8a7a2" strokeWidth="1.5" />
+            <circle cx={-138} cy={340} r="2.5" fill="#a8a7a2" />
 
-            <line x1={bGeneral.x} y1={bGeneral.y} x2={370} y2={360} stroke="#a8a7a2" strokeWidth="1.5" />
-            <circle cx={370} cy={360} r="2.5" fill="#a8a7a2" />
+            <line x1={bGeneral.x} y1={bGeneral.y} x2={138} y2={340} stroke="#a8a7a2" strokeWidth="1.5" />
+            <circle cx={138} cy={340} r="2.5" fill="#a8a7a2" />
+
+            <line x1={bGeneral.x} y1={bGeneral.y} x2={414} y2={340} stroke="#a8a7a2" strokeWidth="1.5" />
+            <circle cx={414} cy={340} r="2.5" fill="#a8a7a2" />
           </svg>
 
           {/* ==================== 1. ROOT PARENT CIRCLE ==================== */}
@@ -657,7 +660,31 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </button>
               </div>
 
-              {/* Card 3: Tutorial Guide */}
+              {/* Card 3: FPS Meter */}
+              <div
+                data-interactive="true"
+                className="w-[260px] bg-paper text-ink border border-ink hover:border-2 p-3 flex flex-col justify-between h-[95px] shadow-sm"
+              >
+                <div className="flex flex-col">
+                  <span className="text-[13px] font-black">实时帧率显示 (FPS)</span>
+                  <span className="text-[11px] text-ink/60">
+                    当前：{settings.general.showFps ? '开启 (左上角常驻)' : '关闭 (默认)'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onUpdateGeneral({
+                      showFps: !settings.general.showFps,
+                    })
+                  }
+                  className="w-full py-1 text-[11px] font-bold border border-ink bg-stone/20 hover:bg-stone/40 rounded-[8px] transition-colors cursor-pointer"
+                >
+                  {settings.general.showFps ? '切换为：关闭' : '切换为：开启'}
+                </button>
+              </div>
+
+              {/* Card 4: Tutorial Guide */}
               <div
                 data-interactive="true"
                 className="w-[260px] bg-paper text-ink border border-ink hover:border-2 p-3 flex flex-col justify-between h-[95px] shadow-sm"

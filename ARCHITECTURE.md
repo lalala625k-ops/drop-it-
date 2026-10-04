@@ -131,6 +131,8 @@
 | `PieDateInputModal.tsx` | 日期输入、解析校验、保存和清除 |
 | `PieTagModal.tsx` | 标签检索、新标签输入和勾选切换 |
 | `PieTitleInputModal.tsx` | 悬浮标题输入/清除，保留 Markdown 字符并提示原标题 |
+| `FpsMeter.tsx` | 左上角极简印刷风格实时帧率 (FPS) 切换开关，采用 rAF 测速与滑块微动效，关闭时零开销 |
+| `PerformanceHUD.tsx` | 右上角性能诊断仪表盘，实时呈现单帧耗时 (FT)、JS 堆内存 (Heap)、视口卡片剔除率与长任务阻塞，支持点击展开详情面板 |
 
 ## 4. 后端文件职责（`backend/`）
 

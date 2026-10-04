@@ -21,6 +21,8 @@ import { SettingsModal } from './components/SettingsModal';
 import { useTourGuide } from './hooks/useTourGuide';
 import { TourHandbookModal } from './components/TourHandbookModal';
 import { TourMinimalPrompt } from './components/TourMinimalPrompt';
+import { FpsMeter } from './components/FpsMeter';
+import { PerformanceHUD } from './components/PerformanceHUD';
 
 import { computeCardFocusViewport } from './utils/canvas';
 import { getNowFormatted } from './utils/dateParser';
@@ -813,7 +815,16 @@ export default function App() {
           onClose={pieMenu.closeResolutionPanel}
           onConfirm={pieMenu.handleConfirmCandidate} />
       )}
+      <FpsMeter
+        enabled={settings.general.showFps}
+        onToggle={() => updateGeneral({ showFps: !settings.general.showFps })}
+      />
       <div className="fixed right-3 top-3 z-[115] flex items-center gap-2">
+        <PerformanceHUD
+          enabled={settings.general.showFps}
+          cardsCount={cards.length}
+          visibleCardsCount={visibleCards.length}
+        />
         {recognitionReports.length > 0 && !diagnosticsOpen && (
           <button type="button" onClick={() => setDiagnosticsOpen(true)}
             className="border border-ink bg-paper px-3 py-1.5 text-xs font-bold text-ink hover:bg-ink hover:text-paper transition-colors cursor-pointer rounded-[10px]">
