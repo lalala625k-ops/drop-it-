@@ -2,8 +2,10 @@ import os
 import hashlib
 import base64
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from backend.services.data_paths import ASSETS_DIR
+from backend.services.thumbnail_service import get_or_create_thumbnail
 
 router = APIRouter(prefix="/api", tags=["assets"])
 
@@ -37,6 +39,29 @@ async def upload_asset(payload: Base64AssetPayload):
             with open(filepath, "wb") as f:
                 f.write(data_bytes)
 
-        return {"success": True, "url": f"/api/assets/{filename}"}
+        # Pre-generate thumbnail immediately
+        get_or_create_thumbnail("assets", filename)
+
+        return {
+            "success": True,
+            "url": f"/api/assets/{filename}",
+            "thumbnail_url": f"/api/thumbnails/assets/{filename}",
+        }
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to save asset: {str(e)}")
+
+@router.get("/thumbnails/{category}/{filename}")
+async def get_thumbnail_file(category: str, filename: str):
+    if category not in ("assets", "screenshots"):
+        raise HTTPException(status_code=400, detail="Invalid thumbnail category")
+    
+    thumb_path = get_or_create_thumbnail(category, filename)
+    if not thumb_path or not thumb_path.is_file():
+        raise HTTPException(status_code=404, detail="Thumbnail not found")
+
+    return FileResponse(
+        path=str(thumb_path),
+        media_type="image/webp",
+        headers={"Cache-Control": "public, max-age=31536000, immutable"}
+    )
+

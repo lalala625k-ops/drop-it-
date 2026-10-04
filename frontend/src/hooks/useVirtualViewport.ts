@@ -39,13 +39,11 @@ export function useVirtualViewport({
   });
   const groupIndex = useMemo(() => new SpatialIndex(groups, groupBounds), [groups, membersByBundle]);
   return useMemo(() => {
-    // If cards count is small (<50), culling overhead is unnecessary
-    if (cards.length <= 40 && groups.length <= 10) {
-      const allCardIdSet = new Set(cards.map((c) => c.id));
+    if (cards.length === 0 && groups.length === 0) {
       return {
-        visibleCards: cards,
-        visibleGroups: groups,
-        visibleCardIdSet: allCardIdSet,
+        visibleCards: [],
+        visibleGroups: [],
+        visibleCardIdSet: new Set<string>(),
         isCullingActive: false,
       };
     }

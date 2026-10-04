@@ -15,6 +15,7 @@ export interface Card {
   headerTitle?: string;     // 顶部超大字粗体自定义标题 (占满卡片宽度)
   url?: string;             // 网页链接
   image?: string;           // 网页缩略图 / 图片卡片Base64或路径
+  thumbnail?: string;       // 800px WebP 低阶预览图路径 (PureRef 级流畅缩放)
   description?: string;     // 网页完整描述 (悬停展示)
   favicon?: string;         // 网站图标
   reminder?: string | null; // 标记日期与提醒时间 (如 "2026-06-26")

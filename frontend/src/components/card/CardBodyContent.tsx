@@ -5,6 +5,7 @@ import { SiteLogo } from '../SiteLogo';
 import { textCardSize } from '../../utils/textCardSize';
 import { imageRatioCache } from '../../utils/imageCardRatio';
 import { MarkdownView } from '../MarkdownView';
+import { getThumbnailUrl } from '../../utils/thumbnail';
 
 interface CardBodyContentProps {
   card: Card;
@@ -30,7 +31,19 @@ export const CardBodyContent: React.FC<CardBodyContentProps> = ({
   const [textEditorEpoch, setTextEditorEpoch] = useState(0);
   const [titleText, setTitleText] = useState(card.title || '');
   const [imgLoadError, setImgLoadError] = useState(false);
+  const [thumbFailed, setThumbFailed] = useState(false);
   const isFeishu = card.type === 'web' && isFeishuUrl(card.url);
+
+  const thumbSrc = getThumbnailUrl(card.image, card.thumbnail);
+  const effectiveImageSrc = (!thumbFailed && thumbSrc) ? thumbSrc : card.image;
+
+  const handleImageError = () => {
+    if (!thumbFailed && thumbSrc && thumbSrc !== card.image) {
+      setThumbFailed(true);
+    } else {
+      setImgLoadError(true);
+    }
+  };
 
   const titleInputRef = useRef<HTMLInputElement>(null);
   const titleRef = useRef<HTMLDivElement>(null);
@@ -94,7 +107,8 @@ export const CardBodyContent: React.FC<CardBodyContentProps> = ({
 
   useEffect(() => {
     setImgLoadError(false);
-  }, [card.image]);
+    setThumbFailed(false);
+  }, [card.image, card.thumbnail]);
 
   useEffect(() => {
     if (isFeishu && card.image) {
@@ -250,7 +264,7 @@ export const CardBodyContent: React.FC<CardBodyContentProps> = ({
           )}
           <div className="flex-1 flex items-center justify-center overflow-hidden relative min-h-0 bg-paper">
             <img
-              src={card.image}
+              src={effectiveImageSrc}
               alt={card.title || 'Image'}
               className="w-full h-full object-cover pointer-events-none"
               referrerPolicy="no-referrer"
@@ -258,6 +272,7 @@ export const CardBodyContent: React.FC<CardBodyContentProps> = ({
               loading="lazy"
               decoding="async"
               onLoad={handleImageLoad}
+              onError={handleImageError}
             />
             {card.tags && card.tags.length > 0 && (
               <div className="absolute bottom-2 left-2 flex flex-wrap gap-1 z-10 pointer-events-none">
@@ -281,14 +296,14 @@ export const CardBodyContent: React.FC<CardBodyContentProps> = ({
               <div className="w-full flex-1 overflow-hidden relative flex items-center justify-center pointer-events-none min-h-0 bg-paper">
                 {card.image && !imgLoadError && (
                   <img
-                    src={card.image}
+                    src={effectiveImageSrc}
                     alt={card.title || 'Web preview'}
                     className="w-full h-full object-cover pointer-events-none"
                     referrerPolicy="no-referrer"
                     loading="lazy"
                     decoding="async"
                     onLoad={handleImageLoad}
-                    onError={() => setImgLoadError(true)}
+                    onError={handleImageError}
                     draggable={false}
                   />
                 )}

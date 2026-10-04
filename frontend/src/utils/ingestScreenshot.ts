@@ -53,7 +53,7 @@ export async function ingestScreenshot(file: File, actions: ImageActions) {
     }
     const current = actions.getCard(id);
     if (!current || current.type === 'image') {
-      actions.updateCard(id, { image: asset.url });
+      actions.updateCard(id, { image: asset.url, thumbnail: asset.thumbnail_url });
       window.setTimeout(() => { void removePendingImage(id); }, 2000);
     } else {
       void removePendingImage(id);

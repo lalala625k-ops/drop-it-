@@ -56,6 +56,10 @@ def get_screenshots_dir() -> Path:
     return get_data_dir() / "screenshots"
 
 
+def get_thumbnails_dir() -> Path:
+    return get_data_dir() / "thumbnails"
+
+
 def get_db_file() -> Path:
     return get_data_dir() / "board.sqlite3"
 
@@ -63,6 +67,7 @@ def get_db_file() -> Path:
 DATA_DIR = get_data_dir()
 ASSETS_DIR = get_assets_dir()
 SCREENSHOTS_DIR = get_screenshots_dir()
+THUMBNAILS_DIR = get_thumbnails_dir()
 
 
 def set_custom_data_dir(new_path_str: str, migrate_data: bool = True) -> dict:
@@ -71,8 +76,10 @@ def set_custom_data_dir(new_path_str: str, migrate_data: bool = True) -> dict:
     new_data_dir.mkdir(parents=True, exist_ok=True)
     new_assets = new_data_dir / "assets"
     new_screenshots = new_data_dir / "screenshots"
+    new_thumbnails = new_data_dir / "thumbnails"
     new_assets.mkdir(exist_ok=True)
     new_screenshots.mkdir(exist_ok=True)
+    new_thumbnails.mkdir(exist_ok=True)
 
     migrated_files = 0
     if migrate_data and old_data_dir != new_data_dir and old_data_dir.exists():
@@ -82,33 +89,26 @@ def set_custom_data_dir(new_path_str: str, migrate_data: bool = True) -> dict:
                 shutil.copy2(src_f, new_data_dir / db_file_name)
                 migrated_files += 1
 
-        old_assets = old_data_dir / "assets"
-        if old_assets.is_dir():
-            for item in old_assets.iterdir():
-                if item.is_file():
-                    target_file = new_assets / item.name
-                    if not target_file.exists():
-                        shutil.copy2(item, target_file)
-                        migrated_files += 1
-
-        old_screenshots = old_data_dir / "screenshots"
-        if old_screenshots.is_dir():
-            for item in old_screenshots.iterdir():
-                if item.is_file():
-                    target_file = new_screenshots / item.name
-                    if not target_file.exists():
-                        shutil.copy2(item, target_file)
-                        migrated_files += 1
+        for folder_name, target_folder in (("assets", new_assets), ("screenshots", new_screenshots), ("thumbnails", new_thumbnails)):
+            old_folder = old_data_dir / folder_name
+            if old_folder.is_dir():
+                for item in old_folder.iterdir():
+                    if item.is_file():
+                        target_file = target_folder / item.name
+                        if not target_file.exists():
+                            shutil.copy2(item, target_file)
+                            migrated_files += 1
 
     cfg = get_config()
     cfg["data_dir"] = str(new_data_dir)
     save_config(cfg)
 
     # Update module-level cache
-    global DATA_DIR, ASSETS_DIR, SCREENSHOTS_DIR
+    global DATA_DIR, ASSETS_DIR, SCREENSHOTS_DIR, THUMBNAILS_DIR
     DATA_DIR = new_data_dir
     ASSETS_DIR = new_assets
     SCREENSHOTS_DIR = new_screenshots
+    THUMBNAILS_DIR = new_thumbnails
 
     return {
         "success": True,

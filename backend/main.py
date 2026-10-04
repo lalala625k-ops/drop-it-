@@ -54,6 +54,12 @@ app.include_router(assets_router)
 app.include_router(migration_router)
 app.include_router(settings_router)
 
+try:
+    from backend.services.thumbnail_service import run_batch_pregeneration
+    run_batch_pregeneration()
+except Exception as e:
+    print(f"Warning: Failed to start thumbnail pregeneration: {e}")
+
 @app.get("/api/health")
 async def health():
     return {"app": "infinite-canvas-note", "ready": True}

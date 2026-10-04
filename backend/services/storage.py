@@ -9,7 +9,7 @@ from typing import Any, Dict
 
 from backend.services.data_paths import (
     DATA_DIR, LEGACY_DATA_DIR, ASSETS_DIR, SCREENSHOTS_DIR,
-    get_data_dir, get_db_file, get_assets_dir, get_screenshots_dir
+    get_data_dir, get_db_file, get_assets_dir, get_screenshots_dir, get_thumbnails_dir
 )
 
 _lock = threading.RLock()
@@ -29,11 +29,13 @@ def _prepare_directory() -> None:
     current_data_dir = get_data_dir()
     current_assets_dir = get_assets_dir()
     current_screenshots_dir = get_screenshots_dir()
+    current_thumbnails_dir = get_thumbnails_dir()
     db_file = get_db_file()
 
     current_data_dir.mkdir(parents=True, exist_ok=True)
     current_assets_dir.mkdir(exist_ok=True)
     current_screenshots_dir.mkdir(exist_ok=True)
+    current_thumbnails_dir.mkdir(exist_ok=True)
     if db_file.exists() or current_data_dir == LEGACY_DATA_DIR:
         return
     source = LEGACY_DATA_DIR / "cards.json"

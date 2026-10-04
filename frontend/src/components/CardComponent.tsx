@@ -5,6 +5,7 @@ import { CardResizeHandles, ResizeHandleDirection } from './card/CardResizeHandl
 import { CardHeaderBadges } from './card/CardHeaderBadges';
 import { CardBodyContent } from './card/CardBodyContent';
 import { isFeishuUrl } from '../utils/feishu';
+import { getThumbnailUrl } from '../utils/thumbnail';
 
 export type { ResizeHandleDirection };
 
@@ -147,7 +148,15 @@ const CardComponentInner: React.FC<CardComponentProps> = ({
       {isTinyThumbnail ? (
         <div className="h-full w-full overflow-hidden bg-paper pointer-events-none">
           {card.image && card.type !== 'text' && !isFeishuUrl(card.url) ? (
-            <img src={card.image} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" draggable={false} />
+            <img
+              src={getThumbnailUrl(card.image, card.thumbnail) || card.image}
+              alt=""
+              className="h-full w-full object-cover"
+              referrerPolicy="no-referrer"
+              draggable={false}
+              loading="lazy"
+              decoding="async"
+            />
           ) : (
             <div className="flex h-full w-full flex-col justify-center gap-[2px] p-[2px]">
               <span className="h-[2px] w-3/4 bg-ink" />
