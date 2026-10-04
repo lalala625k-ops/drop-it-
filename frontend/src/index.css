@@ -39,3 +39,27 @@ body {
 textarea[data-text-editor]:not(:focus)::selection {
   background: transparent;
 }
+
+/* Pin number badge bounce animation */
+@keyframes pin-dot-jump {
+  0% {
+    transform: translateY(0);
+  }
+  30% {
+    transform: translateY(-8px);
+  }
+  58% {
+    transform: translateY(1.5px);
+  }
+  78% {
+    transform: translateY(-2px);
+  }
+  100% {
+    transform: translateY(0);
+  }
+}
+
+.group:hover .pin-dot-jump {
+  animation: pin-dot-jump 0.42s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+}
+

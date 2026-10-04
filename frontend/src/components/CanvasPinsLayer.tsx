@@ -99,7 +99,7 @@ export const CanvasPinsLayer: React.FC<CanvasPinsLayerProps> = ({
             }}
             title={`图钉 ${pin.index} · 拖拽移动位置，点击或按 Ctrl+${pin.index} 跳转，右键删除`}
           >
-            {/* Main Pin Badge */}
+            {/* Main Pin Graphic (Cross + Dot) */}
             <div
               onMouseDown={(e) => {
                 if (e.button !== 0) return;
@@ -118,15 +118,34 @@ export const CanvasPinsLayer: React.FC<CanvasPinsLayerProps> = ({
                 e.stopPropagation();
                 onRemove(pin.index);
               }}
-              className={`relative px-2.5 h-8 bg-paper border-2 border-ink shadow-sharp flex items-center gap-1 select-none transition-all duration-75 ${
+              className={`relative w-[44px] h-[44px] select-none transition-transform duration-75 flex items-center justify-center ${
                 isDragging
-                  ? 'cursor-grabbing scale-110 shadow-lg bg-ink text-paper ring-2 ring-ink ring-offset-1'
-                  : 'cursor-grab hover:bg-ink hover:text-paper hover:scale-105 active:scale-95'
+                  ? 'cursor-grabbing scale-110 drop-shadow-md'
+                  : 'cursor-grab hover:scale-105 active:scale-95'
               }`}
             >
-              <span className="text-xs">📌</span>
-              <span className="font-mono font-black text-sm">{pin.index}</span>
-              <span className="text-[10px] font-mono opacity-60 ml-0.5">Ctrl+{pin.index}</span>
+              {/* Filleted Cross (SVG) */}
+              <svg
+                width="44"
+                height="44"
+                viewBox="0 0 44 44"
+                className="absolute inset-0 pointer-events-none fill-ink drop-shadow-sm"
+              >
+                <path
+                  d="M 19.6 4.0 L 24.4 4.0 L 24.4 14.0 A 5.6 5.6 0 0 0 30.0 19.6 L 40.0 19.6 L 40.0 24.4 L 30.0 24.4 A 5.6 5.6 0 0 0 24.4 30.0 L 24.4 40.0 L 19.6 40.0 L 19.6 30.0 A 5.6 5.6 0 0 0 14.0 24.4 L 4.0 24.4 L 4.0 19.6 L 14.0 19.6 A 5.6 5.6 0 0 0 19.6 14.0 Z"
+                />
+              </svg>
+
+              {/* Bottom-right black dot with pin number (bounces on hover) */}
+              <div
+                className={`pin-dot-jump absolute right-[2px] bottom-[2px] w-[17px] h-[17px] rounded-full bg-ink border border-paper/40 flex items-center justify-center shadow-sm pointer-events-none ${
+                  isDragging ? '!animation-none' : ''
+                }`}
+              >
+                <span className="font-mono font-bold text-[10px] text-paper leading-none select-none">
+                  {pin.index}
+                </span>
+              </div>
 
               {/* Remove button on hover (hidden while dragging) */}
               {!isDragging && (
@@ -140,7 +159,7 @@ export const CanvasPinsLayer: React.FC<CanvasPinsLayerProps> = ({
                     onRemove(pin.index);
                   }}
                   title={`移除图钉 ${pin.index}`}
-                  className="absolute -top-2 -right-2 w-4 h-4 rounded-full bg-paper border border-ink text-ink text-[10px] leading-none flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-ink hover:text-paper transition-opacity cursor-pointer shadow-sm"
+                  className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-paper border border-ink text-ink text-[10px] leading-none flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-ink hover:text-paper transition-opacity cursor-pointer shadow-sm z-10"
                 >
                   ✕
                 </button>
