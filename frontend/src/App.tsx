@@ -20,8 +20,7 @@ import { useSettings } from './hooks/useSettings';
 import { SettingsModal } from './components/SettingsModal';
 import { useTourGuide } from './hooks/useTourGuide';
 import { TourHandbookModal } from './components/TourHandbookModal';
-import { TourOverlayBar } from './components/TourOverlayBar';
-import { TourCanvasPrompt } from './components/TourCanvasPrompt';
+import { TourMinimalPrompt } from './components/TourMinimalPrompt';
 
 import { computeCardFocusViewport } from './utils/canvas';
 import { getNowFormatted } from './utils/dateParser';
@@ -278,6 +277,8 @@ export default function App() {
   });
 
   const tour = useTourGuide({
+    cards,
+    groups,
     cardsRef,
     groupsRef,
     setCards,
@@ -288,6 +289,7 @@ export default function App() {
     pushHistory,
     commitState: actions.commitState,
     showToast,
+    onFitCanvas: () => handleCanvasDoubleClick(cardsRef.current, groupsRef.current),
   });
 
   // Paste & Shortcuts
@@ -750,20 +752,6 @@ export default function App() {
           />
         ))}
 
-        {tour.isSandboxActive && tour.currentPrompt && (
-          <TourCanvasPrompt
-            x={tour.currentPrompt.x}
-            y={tour.currentPrompt.y}
-            stepNumber={tour.currentPrompt.stepNumber}
-            totalSteps={tour.currentPrompt.totalSteps}
-            title={tour.currentPrompt.title}
-            instruction={tour.currentPrompt.instruction}
-            shortcut={tour.currentPrompt.shortcut}
-            onNext={tour.goToNextStep}
-            onPrev={tour.goToPrevStep}
-          />
-        )}
-
         <SelectionBox box={selectionRect} />
         <SnapGuides lines={snapLines} />
       </div>
@@ -848,11 +836,12 @@ export default function App() {
         </button>
       </div>
       {tour.isSandboxActive && (
-        <TourOverlayBar
-          currentStepIndex={tour.currentStepIndex}
-          onNextStep={tour.goToNextStep}
-          onPrevStep={tour.goToPrevStep}
-          onExitTour={tour.exitTour}
+        <TourMinimalPrompt
+          promptText={tour.promptText}
+          shortcutText={tour.shortcutText}
+          isCompleted={tour.isCompleted}
+          onExit={tour.exitTour}
+          onSkipStep={tour.skipToNextStage}
         />
       )}
       <TourHandbookModal
