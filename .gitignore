@@ -21,6 +21,7 @@ env/
 # Temporary and local data files
 *.tmp
 *.log
+*.note
 *.local.json
 *.local.csv
 .DS_Store
