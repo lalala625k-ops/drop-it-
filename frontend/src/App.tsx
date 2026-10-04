@@ -644,6 +644,7 @@ export default function App() {
           pins={canvasPins.pins}
           onJump={canvasPins.jumpToPin}
           onRemove={canvasPins.removePin}
+          onUpdatePosition={canvasPins.updatePinPosition}
           zoom={viewport.zoom}
         />
         <ParentLinkLines

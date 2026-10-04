@@ -75,6 +75,17 @@ export function useCanvasPins({ viewportRef, setViewport, showToast }: UseCanvas
     showToast?.(`已移除图钉 ${index}`);
   }, [showToast]);
 
+  const updatePinPosition = useCallback((index: number, x: number, y: number) => {
+    setPins((prev) => {
+      const next = prev.map((p) =>
+        p.index === index ? { ...p, x: Math.round(x), y: Math.round(y) } : p
+      );
+      savePins(next);
+      return next;
+    });
+    showToast?.(`已更新图钉 ${index} 的位置`);
+  }, [showToast]);
+
   const jumpToPin = useCallback((index: number): boolean => {
     const pin = pins.find((p) => p.index === index);
     if (!pin) return false;
@@ -139,6 +150,7 @@ export function useCanvasPins({ viewportRef, setViewport, showToast }: UseCanvas
     openPinPrompt,
     closePinPrompt,
     addOrUpdatePin,
+    updatePinPosition,
     removePin,
     jumpToPin,
   };

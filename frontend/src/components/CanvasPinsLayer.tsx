@@ -1,19 +1,74 @@
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { CanvasPin } from '../hooks/useCanvasPins';
 
 interface CanvasPinsLayerProps {
   pins: CanvasPin[];
   onJump: (index: number) => void;
   onRemove: (index: number) => void;
+  onUpdatePosition: (index: number, x: number, y: number) => void;
   zoom: number;
+}
+
+interface DragState {
+  index: number;
+  startWorld: { x: number; y: number };
+  startMouse: { x: number; y: number };
+  currentMouse: { x: number; y: number };
+  hasMoved: boolean;
 }
 
 export const CanvasPinsLayer: React.FC<CanvasPinsLayerProps> = ({
   pins,
   onJump,
   onRemove,
+  onUpdatePosition,
   zoom,
 }) => {
+  const [dragState, setDragState] = useState<DragState | null>(null);
+  const dragStateRef = useRef<DragState | null>(null);
+  dragStateRef.current = dragState;
+
+  useEffect(() => {
+    if (!dragState) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const current = dragStateRef.current;
+      if (!current) return;
+      const dx = e.clientX - current.startMouse.x;
+      const dy = e.clientY - current.startMouse.y;
+      const hasMoved = current.hasMoved || Math.hypot(dx, dy) > 4;
+
+      setDragState({
+        ...current,
+        currentMouse: { x: e.clientX, y: e.clientY },
+        hasMoved,
+      });
+    };
+
+    const handleMouseUp = (e: MouseEvent) => {
+      const current = dragStateRef.current;
+      if (current) {
+        if (current.hasMoved) {
+          const dx = e.clientX - current.startMouse.x;
+          const dy = e.clientY - current.startMouse.y;
+          const finalX = current.startWorld.x + dx / zoom;
+          const finalY = current.startWorld.y + dy / zoom;
+          onUpdatePosition(current.index, finalX, finalY);
+        } else {
+          onJump(current.index);
+        }
+      }
+      setDragState(null);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [dragState, onJump, onUpdatePosition, zoom]);
+
   if (!pins.length) return null;
 
   // Scale pin slightly when zoom is very far so it stays readable, but keep it elegant
@@ -21,50 +76,79 @@ export const CanvasPinsLayer: React.FC<CanvasPinsLayerProps> = ({
 
   return (
     <div className="absolute inset-0 pointer-events-none z-[12]">
-      {pins.map((pin) => (
-        <div
-          key={pin.id}
-          className="group absolute -translate-x-1/2 -translate-y-1/2 pointer-events-auto select-none flex items-center justify-center"
-          style={{
-            left: pin.x,
-            top: pin.y,
-            transform: `translate(-50%, -50%) scale(${scale})`,
-            transformOrigin: 'center center',
-          }}
-          title={`图钉 ${pin.index} · 双击或按 Ctrl+${pin.index} 跳转`}
-        >
-          {/* Main Pin Badge */}
-          <div
-            onClick={(e) => {
-              e.stopPropagation();
-              onJump(pin.index);
-            }}
-            onContextMenu={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              onRemove(pin.index);
-            }}
-            className="relative px-2.5 h-8 bg-paper border-2 border-ink shadow-sharp flex items-center gap-1 cursor-pointer transition-all duration-150 hover:bg-ink hover:text-paper hover:scale-110 active:scale-95"
-          >
-            <span className="text-xs">📌</span>
-            <span className="font-mono font-black text-sm">{pin.index}</span>
-            <span className="text-[10px] font-mono opacity-60 ml-0.5">Ctrl+{pin.index}</span>
+      {pins.map((pin) => {
+        const isDragging = dragState?.index === pin.index;
+        const currentX = isDragging
+          ? pin.x + (dragState.currentMouse.x - dragState.startMouse.x) / zoom
+          : pin.x;
+        const currentY = isDragging
+          ? pin.y + (dragState.currentMouse.y - dragState.startMouse.y) / zoom
+          : pin.y;
 
-            {/* Remove button on hover */}
-            <button
-              type="button"
-              onClick={(e) => {
+        return (
+          <div
+            key={pin.id}
+            className={`group absolute -translate-x-1/2 -translate-y-1/2 pointer-events-auto select-none flex items-center justify-center ${
+              isDragging ? 'z-50' : ''
+            }`}
+            style={{
+              left: currentX,
+              top: currentY,
+              transform: `translate(-50%, -50%) scale(${scale})`,
+              transformOrigin: 'center center',
+            }}
+            title={`图钉 ${pin.index} · 拖拽移动位置，点击或按 Ctrl+${pin.index} 跳转，右键删除`}
+          >
+            {/* Main Pin Badge */}
+            <div
+              onMouseDown={(e) => {
+                if (e.button !== 0) return;
+                e.stopPropagation();
+                e.preventDefault();
+                setDragState({
+                  index: pin.index,
+                  startWorld: { x: pin.x, y: pin.y },
+                  startMouse: { x: e.clientX, y: e.clientY },
+                  currentMouse: { x: e.clientX, y: e.clientY },
+                  hasMoved: false,
+                });
+              }}
+              onContextMenu={(e) => {
+                e.preventDefault();
                 e.stopPropagation();
                 onRemove(pin.index);
               }}
-              title={`移除图钉 ${pin.index}`}
-              className="absolute -top-2 -right-2 w-4 h-4 rounded-full bg-paper border border-ink text-ink text-[10px] leading-none flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-ink hover:text-paper transition-opacity cursor-pointer shadow-sm"
+              className={`relative px-2.5 h-8 bg-paper border-2 border-ink shadow-sharp flex items-center gap-1 select-none transition-all duration-75 ${
+                isDragging
+                  ? 'cursor-grabbing scale-110 shadow-lg bg-ink text-paper ring-2 ring-ink ring-offset-1'
+                  : 'cursor-grab hover:bg-ink hover:text-paper hover:scale-105 active:scale-95'
+              }`}
             >
-              ✕
-            </button>
+              <span className="text-xs">📌</span>
+              <span className="font-mono font-black text-sm">{pin.index}</span>
+              <span className="text-[10px] font-mono opacity-60 ml-0.5">Ctrl+{pin.index}</span>
+
+              {/* Remove button on hover (hidden while dragging) */}
+              {!isDragging && (
+                <button
+                  type="button"
+                  onMouseDown={(e) => {
+                    e.stopPropagation();
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRemove(pin.index);
+                  }}
+                  title={`移除图钉 ${pin.index}`}
+                  className="absolute -top-2 -right-2 w-4 h-4 rounded-full bg-paper border border-ink text-ink text-[10px] leading-none flex items-center justify-center opacity-0 group-hover:opacity-100 hover:bg-ink hover:text-paper transition-opacity cursor-pointer shadow-sm"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 };
