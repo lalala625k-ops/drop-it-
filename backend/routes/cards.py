@@ -1,7 +1,10 @@
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from backend.services.storage import load_data_from_disk, get_revision as read_revision, apply_changes, replace_all, RevisionConflict
+from backend.services.storage import (
+    load_data_from_disk, get_revision as read_revision, apply_changes, replace_all, RevisionConflict,
+    get_pins_from_disk, save_pins_to_disk
+)
 
 router = APIRouter(prefix="/api/cards", tags=["cards"])
 
@@ -94,3 +97,12 @@ async def save_changes(payload: ChangesPayload):
 @router.get("/revision")
 async def get_revision():
     return {"revision": read_revision()}
+
+@router.get("/pins")
+async def get_pins():
+    return {"pins": get_pins_from_disk()}
+
+@router.post("/pins")
+async def save_pins(payload: List[dict]):
+    save_pins_to_disk(payload)
+    return {"success": True, "count": len(payload)}

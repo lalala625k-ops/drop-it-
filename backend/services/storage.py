@@ -84,12 +84,40 @@ def get_revision() -> int:
         return int(connection.execute("SELECT value FROM meta WHERE key='revision'").fetchone()[0])
 
 
+def get_pins_from_disk() -> list:
+    with _lock, closing(_connect()) as connection:
+        row = connection.execute("SELECT value FROM meta WHERE key='pins'").fetchone()
+        if row and row[0]:
+            try:
+                return json.loads(row[0])
+            except Exception:
+                return []
+        return []
+
+
+def save_pins_to_disk(pins: list) -> None:
+    with _lock, closing(_connect()) as connection:
+        with connection:
+            connection.execute(
+                "INSERT OR REPLACE INTO meta VALUES ('pins', ?)",
+                (json.dumps(pins, ensure_ascii=False),)
+            )
+
+
 def load_data_from_disk() -> Dict[str, Any]:
     with _lock, closing(_connect()) as connection:
         rows = connection.execute("SELECT kind,data FROM objects ORDER BY rowid").fetchall()
         revision = int(connection.execute("SELECT value FROM meta WHERE key='revision'").fetchone()[0])
+        pins_row = connection.execute("SELECT value FROM meta WHERE key='pins'").fetchone()
+        pins = []
+        if pins_row and pins_row[0]:
+            try:
+                pins = json.loads(pins_row[0])
+            except Exception:
+                pins = []
     return {"cards": [json.loads(raw) for kind, raw in rows if kind == "card"],
             "groups": [json.loads(raw) for kind, raw in rows if kind == "group"],
+            "pins": pins,
             "revision": revision}
 
 

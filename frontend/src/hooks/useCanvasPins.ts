@@ -28,6 +28,13 @@ function savePins(pins: CanvasPin[]) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(pins));
   } catch { /* ignore */ }
+  try {
+    fetch('/api/cards/pins', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(pins),
+    }).catch(() => {});
+  } catch { /* ignore */ }
 }
 
 interface UseCanvasPinsProps {
@@ -42,6 +49,39 @@ export function useCanvasPins({ viewportRef, setViewport, showToast }: UseCanvas
     screen: { x: number; y: number };
     world: { x: number; y: number };
   } | null>(null);
+
+  // Auto-sync pins with backend on mount across different browsers and desktop
+  useEffect(() => {
+    fetch('/api/cards/pins')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && Array.isArray(data.pins)) {
+          const serverPins: CanvasPin[] = data.pins;
+          setPins((prev) => {
+            if (prev.length > 0 && serverPins.length === 0) {
+              // Local has pins but server is empty: sync local to server
+              savePins(prev);
+              return prev;
+            }
+            if (serverPins.length > 0 && prev.length === 0) {
+              // Server has pins but local is empty (e.g. desktop app opened): load server pins
+              try { localStorage.setItem(STORAGE_KEY, JSON.stringify(serverPins)); } catch {}
+              return serverPins;
+            }
+            if (serverPins.length > 0) {
+              const pinMap = new Map<number, CanvasPin>();
+              for (const p of prev) pinMap.set(p.index, p);
+              for (const p of serverPins) pinMap.set(p.index, p);
+              const merged = Array.from(pinMap.values()).sort((a, b) => a.index - b.index);
+              try { localStorage.setItem(STORAGE_KEY, JSON.stringify(merged)); } catch {}
+              return merged;
+            }
+            return prev;
+          });
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const animFrameRef = useRef<number | null>(null);
 
