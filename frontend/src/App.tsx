@@ -18,6 +18,9 @@ import { PinInputModal } from './components/PinInputModal';
 import { CanvasPinsLayer } from './components/CanvasPinsLayer';
 import { useSettings } from './hooks/useSettings';
 import { SettingsModal } from './components/SettingsModal';
+import { useTourGuide } from './hooks/useTourGuide';
+import { TourHandbookModal } from './components/TourHandbookModal';
+import { TourOverlayBar } from './components/TourOverlayBar';
 
 import { computeCardFocusViewport } from './utils/canvas';
 import { getNowFormatted } from './utils/dateParser';
@@ -270,6 +273,19 @@ export default function App() {
   const canvasPins = useCanvasPins({
     viewportRef,
     setViewport,
+    showToast,
+  });
+
+  const tour = useTourGuide({
+    cardsRef,
+    groupsRef,
+    setCards,
+    setGroups,
+    viewportRef,
+    setViewport,
+    canvasPins,
+    pushHistory,
+    commitState: actions.commitState,
     showToast,
   });
 
@@ -798,6 +814,15 @@ export default function App() {
         )}
         <button
           type="button"
+          onClick={() => tour.setIsHandbookOpen(true)}
+          title="核心操作与功能教程"
+          className="border border-ink bg-paper px-3 py-1.5 text-xs font-bold text-ink hover:bg-ink hover:text-paper transition-colors cursor-pointer rounded-[10px] flex items-center gap-1"
+        >
+          <span>?</span>
+          <span>教程</span>
+        </button>
+        <button
+          type="button"
           onClick={() => setIsSettingsOpen(true)}
           title="设置 (Ctrl+,)"
           className="border border-ink bg-paper px-3 py-1.5 text-xs font-bold text-ink hover:bg-ink hover:text-paper transition-colors cursor-pointer rounded-[10px]"
@@ -805,6 +830,19 @@ export default function App() {
           ⚙ 设置
         </button>
       </div>
+      {tour.isSandboxActive && (
+        <TourOverlayBar
+          currentStepIndex={tour.currentStepIndex}
+          onNextStep={tour.goToNextStep}
+          onPrevStep={tour.goToPrevStep}
+          onExitTour={tour.exitTour}
+        />
+      )}
+      <TourHandbookModal
+        isOpen={tour.isHandbookOpen}
+        onClose={() => tour.setIsHandbookOpen(false)}
+        onStartInteractiveSandbox={tour.startTourSandbox}
+      />
       {diagnosticsOpen && <RecognitionDiagnostics reports={recognitionReports}
         activeReviewCardId={pieMenu.resolutionPanel?.cardId}
         onConfirmCandidate={pieMenu.handleConfirmCandidate}
@@ -822,6 +860,7 @@ export default function App() {
         pins={canvasPins.pins}
         onImportComplete={handleImportComplete}
         showToast={showToast}
+        onOpenTour={() => tour.setIsHandbookOpen(true)}
       />
       {toast && <div role="status" aria-live="polite"
         className="fixed bottom-6 left-1/2 z-[120] max-w-[min(90vw,480px)] -translate-x-1/2 border border-ink bg-paper px-4 py-3 text-center text-xs text-ink shadow-xl pointer-events-none">

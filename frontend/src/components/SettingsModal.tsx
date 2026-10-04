@@ -22,6 +22,7 @@ interface SettingsModalProps {
     pins?: CanvasPin[];
   }) => void;
   showToast: (msg: string) => void;
+  onOpenTour?: () => void;
 }
 
 type TabType = 'shortcuts' | 'storage' | 'general';
@@ -45,6 +46,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   pins,
   onImportComplete,
   showToast,
+  onOpenTour,
 }) => {
   const [activeTab, setActiveTab] = useState<TabType>('shortcuts');
   const [recordingKey, setRecordingKey] = useState<keyof ShortcutSettings | null>(null);
@@ -479,6 +481,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       仅按 M 呼出
                     </button>
                   </div>
+                </div>
+
+                {/* 3. Core Tutorial Guide */}
+                <div className="flex items-center justify-between py-2 border-b border-ink/10">
+                  <div className="flex flex-col">
+                    <span className="text-[14px] font-bold text-ink">核心功能与动态教程</span>
+                    <span className="text-[12px] text-ink/60">打组、父级引线、自动装箱对齐与图钉的交互演练与图解手册</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onOpenTour?.();
+                    }}
+                    className="px-3.5 py-1.5 text-[12px] font-bold bg-ink text-paper rounded-[10px] hover:bg-ink/80 transition-colors cursor-pointer whitespace-nowrap"
+                  >
+                    查看教程手册
+                  </button>
                 </div>
               </div>
             )}
