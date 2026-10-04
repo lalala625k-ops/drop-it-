@@ -21,6 +21,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { useTourGuide } from './hooks/useTourGuide';
 import { TourHandbookModal } from './components/TourHandbookModal';
 import { TourOverlayBar } from './components/TourOverlayBar';
+import { TourCanvasPrompt } from './components/TourCanvasPrompt';
 
 import { computeCardFocusViewport } from './utils/canvas';
 import { getNowFormatted } from './utils/dateParser';
@@ -722,6 +723,7 @@ export default function App() {
             isSelected={selectedGroupIds.has(group.id) && pressedObject !== group.id}
             childCount={getParentLinkage(cards, group.id, displayGroups).cardIds.size}
             isDragOver={dragOverGroupId === group.id}
+            tourHint={tour.isSandboxActive ? tour.tourHints[group.id] : undefined}
             onSelect={(e) => canvasInteractions.handleStartGroupDrag(group, e)}
             onRename={renameGroup}
             onUngroup={dissolveParent}
@@ -736,6 +738,7 @@ export default function App() {
             isSelected={selectedCardIds.has(card.id)}
             showSelectionControls={selectedCardIds.has(card.id) && pressedObject !== card.id}
             parentHighlighted={parentHighlights.cardIds.has(card.id)}
+            tourHint={tour.isSandboxActive ? tour.tourHints[card.id] : undefined}
             onSelect={(e) => canvasInteractions.handleStartCardDrag(card, e)}
             onUpdate={actions.handleCardUpdate}
             onTextEdit={actions.handleCardTextEdit}
@@ -746,6 +749,20 @@ export default function App() {
             zoom={viewport.zoom}
           />
         ))}
+
+        {tour.isSandboxActive && tour.currentPrompt && (
+          <TourCanvasPrompt
+            x={tour.currentPrompt.x}
+            y={tour.currentPrompt.y}
+            stepNumber={tour.currentPrompt.stepNumber}
+            totalSteps={tour.currentPrompt.totalSteps}
+            title={tour.currentPrompt.title}
+            instruction={tour.currentPrompt.instruction}
+            shortcut={tour.currentPrompt.shortcut}
+            onNext={tour.goToNextStep}
+            onPrev={tour.goToPrevStep}
+          />
+        )}
 
         <SelectionBox box={selectionRect} />
         <SnapGuides lines={snapLines} />

@@ -63,3 +63,16 @@ textarea[data-text-editor]:not(:focus)::selection {
   animation: pin-dot-jump 0.42s cubic-bezier(0.18, 0.89, 0.32, 1.28);
 }
 
+/* Tour sandbox non-linear floating bounce animation */
+@keyframes tour-card-float {
+  0%, 100% {
+    transform: translate(var(--tour-x, 0px), var(--tour-y, 0px));
+  }
+  50% {
+    transform: translate(var(--tour-x, 0px), calc(var(--tour-y, 0px) - 7px));
+  }
+}
+
+.animate-tour-bounce {
+  animation: tour-card-float 2.2s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
+}

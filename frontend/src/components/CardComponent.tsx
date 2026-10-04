@@ -8,11 +8,17 @@ import { isFeishuUrl } from '../utils/feishu';
 
 export type { ResizeHandleDirection };
 
+export interface TourCardHint {
+  label: string;
+  bounce?: boolean;
+}
+
 interface CardComponentProps {
   card: Card;
   isSelected: boolean;
   showSelectionControls: boolean;
   parentHighlighted?: boolean;
+  tourHint?: TourCardHint;
   onSelect: (e: React.MouseEvent) => void;
   onUpdate: (id: string, updates: Partial<Card>) => void;
   onTextEdit: (id: string, updates: Partial<Card>) => void;
@@ -29,6 +35,7 @@ const CardComponentInner: React.FC<CardComponentProps> = ({
   isSelected,
   showSelectionControls,
   parentHighlighted = false,
+  tourHint,
   onSelect,
   onUpdate,
   onTextEdit,
@@ -94,22 +101,28 @@ const CardComponentInner: React.FC<CardComponentProps> = ({
     }
   };
 
+  const isTourBouncing = !!tourHint?.bounce;
+
   return (
     <div
       data-card-id={card.id}
       data-selected={isSelected ? 'true' : 'false'}
       title={isTinyThumbnail ? card.headerTitle || card.title || card.content?.slice(0, 80) || '便签缩略图' : undefined}
       className={`absolute rounded-none select-none group bg-paper text-ink transition-colors ${
+        isTourBouncing ? 'animate-tour-bounce' : ''
+      } ${
         showSelectionControls ? 'border-2 border-ink z-30' : 'border border-ink hover:border-2'
       }`}
       style={{
-        transform: `translate(${card.x}px, ${card.y}px)`,
+        '--tour-x': `${card.x}px`,
+        '--tour-y': `${card.y}px`,
+        transform: isTourBouncing ? undefined : `translate(${card.x}px, ${card.y}px)`,
         width: `${card.width}px`,
         height: `${card.height}px`,
         zIndex: card.zIndex,
         outline: parentHighlighted ? '3px solid #1d1d1d' : undefined,
         outlineOffset: parentHighlighted ? '2px' : undefined,
-      }}
+      } as React.CSSProperties}
       onMouseDown={handleMouseDown}
       onDoubleClick={(e) => {
         e.stopPropagation();
@@ -122,6 +135,16 @@ const CardComponentInner: React.FC<CardComponentProps> = ({
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
+      {/* Tour Hint Tooltip Badge */}
+      {tourHint && (
+        <div className="absolute -top-7 left-1/2 -translate-x-1/2 z-50 pointer-events-none flex flex-col items-center">
+          <div className="px-2 py-0.5 bg-ink text-paper text-[11px] font-bold tracking-wide border border-paper/40 shadow-sm whitespace-nowrap flex items-center gap-1 rounded-sm">
+            <span>{tourHint.label}</span>
+            <span className="text-[10px] opacity-80">↓</span>
+          </div>
+          <div className="w-0 h-0 border-x-4 border-x-transparent border-t-4 border-t-ink" />
+        </div>
+      )}
       {isTinyThumbnail ? (
         <div className="h-full w-full overflow-hidden bg-paper pointer-events-none">
           {card.image && card.type !== 'text' && !isFeishuUrl(card.url) ? (
@@ -179,4 +202,6 @@ export const CardComponent = memo(CardComponentInner, (previous, next) =>
   previous.showSelectionControls === next.showSelectionControls &&
   previous.parentHighlighted === next.parentHighlighted &&
   previous.contentScale === next.contentScale &&
+  previous.tourHint?.label === next.tourHint?.label &&
+  previous.tourHint?.bounce === next.tourHint?.bounce &&
   previous.zoom === next.zoom);
