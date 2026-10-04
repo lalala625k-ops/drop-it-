@@ -48,14 +48,9 @@ export function useCardClipboard({
       try {
         const blob = await cardImageToPngBlob(imageCard.image);
         if (blob) {
-          const itemData: Record<string, Blob> = {
-            'image/png': blob,
-          };
-          if (externalText) {
-            itemData['text/plain'] = new Blob([externalText], { type: 'text/plain' });
-          }
-          await navigator.clipboard.write([new ClipboardItem(itemData)]);
-          showToast(imageCard.url ? '已复制图片及原链接到系统剪贴板' : '已复制图片到系统剪贴板');
+          // Pure image copy: write only image/png so apps (like WeChat) paste the picture without unwanted text prefixes
+          await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+          showToast('已复制图片到系统剪贴板');
           return;
         }
       } catch {

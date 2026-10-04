@@ -122,14 +122,14 @@ export function getExternalClipboardText(snapshot: CanvasClipboardSnapshot): str
   if (!snapshot.cards.length && !snapshot.groups.length) return '';
   const lines: string[] = [];
   for (const card of snapshot.cards) {
-    if (card.url) {
+    if (card.url && /^https?:\/\//i.test(card.url)) {
       lines.push(card.url);
     } else if (card.type === 'text' && card.content) {
       lines.push(card.content);
+    } else if (card.type === 'web' && card.url) {
+      lines.push(card.url);
     } else if (card.headerTitle || card.title) {
       lines.push(card.headerTitle || card.title || '');
-    } else if (card.type === 'image' && card.image) {
-      lines.push(card.image);
     }
   }
   for (const group of snapshot.groups) {
