@@ -174,8 +174,10 @@
 1. **加载**：未同步的本地变更优先恢复，否则读取后端非空数据；失败或为空时读取本地缓存，再降级到引导卡片。启动时规范化树连接和圆形父物体尺寸，外层 Group 保留原尺寸与收起状态；视口单独恢复。
 2. **保存**：卡片及父物体拖动松手调用 `commitState`；外层 Group 操作调用 `saveStateDebounced`；立即写入带待同步标记的本地数据，400ms 防抖后异步 POST 变更对象。后端比较基础修订号，过期写入返回 409；本地副本保留并提示用户手工处理冲突。当前没有自动合并或跨设备同步。
 3. **图片**：粘贴/拖入先在 IndexedDB 暂存并创建 Base64 图片卡，再异步上传，成功后换成 URL；后端断开时保留本地图片。右键 OCR 转文本；识别原链接先检查二维码和 OCR 中的明确网址/编号，未命中时调用已配置的视觉模型提取平台、标题和作者，再按站内搜索→目标域名定向搜索核验具体内容页。模型未配置或失败即停止，不以 OCR 标题代替。Instagram 无标题时用 OCR 正文作为检索词；少数派 Matrix 强特征可纠正模型误判。高可信结果自动转换，相似候选在卡片旁待用户确认。未取得链接时保留原图，结果面板和最近 20 次诊断为前端临时状态。本地写入失败时仍会尝试剥离超过 50,000 字符的 Base64 图片，加载时从 IndexedDB 补回。
-4. **设置**：`pinboard_viewport_v1` 仅存浏览器，不包含在后端数据及 JSON 导出中。画布和主画布卡片使用固定配色；Group/父物体的 `color` 随 `groups` 写入本地、后端和 JSON 备份，旧卡片颜色字段保留兼容但不参与主画布卡片绘制。
-5. **备份**：JSON 导出 `{cards, groups}`，保留现有 `image` 值（URL 或 Base64），不打包 URL 指向文件。迁移须另带 `assets/`、`screenshots/`；远程图片仍依赖原站。
+4. **设置**：快捷键映射与通用偏好（滚轮缩放、小地图显示）由 `useSettings.ts` 持久化在浏览器的 `pinboard_settings_v1` 中；视口记忆 `pinboard_viewport_v1` 仅存浏览器；自定义数据存储路径由后端持久化在 `%LOCALAPPDATA%/InfiniteCanvasNote/config.json` 中；树状设置微画布（`SettingsModal.tsx`）独立管理平移与缩放视口。
+5. **备份与归档**：
+   - 轻量备份：JSON 导出 `{cards, groups}`，保留现有 `image` 值（URL 或 Base64），不打包外部文件。
+   - 全量归档（`.note`）：通过后端 `/api/archive/export` 将当前 SQLite 数据及所有已上传的本地原图（`assets/`）和网页截图（`screenshots/`）统一打包为单一 `.note` 文件（ZIP 规范）；支持通过 `/api/archive/import` 上传 `.note` 实现一键全量覆盖还原，并自动热重载当前存储目录与画板。
 6. **字段联动**：修改前端类型时同时考虑后端模型、新建/更新、复制、导入导出及历史快照。复制对象时重映射快照内部 `groupId`、`bundleId` 和 Group 的 `parentIds`；未复制的外层 Group 不承接新卡片。`isParsing` 为前端临时字段，后端不保存。树状关系由独立卡片的 `groupId`、Group 的 `parentIds[0]` 与成员卡片的 `bundleId` 共同确定；打组时会清除成员原有的单独上级连接，脱组时成员和下级分支改接原 Group 的上级。
 
 ## 6. 修改入口速查
@@ -193,4 +195,7 @@
 | 小地图与裁剪 | `MinimapNav.tsx`、`useMinimapState.ts`、`useVirtualViewport.ts`、`ParentLinkLines.tsx` |
 | 父物体颜色 | `utils/groupColors.ts`、`PieDateMenu.tsx`、`usePieMenuState.ts`、`MinimapNav.tsx`、`BundleGroupComponent.tsx`、`GroupComponent.tsx` |
 | 保存、备份、恢复 | `utils/storage.ts`、`useCanvasInit.ts`、后端 cards/storage 模块 |
+| 设置微画布与快捷键/目录迁移 | `SettingsModal.tsx`、`useSettings.ts`、后端 `routes/settings.py` |
+| 全量归档 (.note) 打包与还原 | `SettingsModal.tsx`、后端 `routes/settings.py`、`services/storage.py` |
+| 新手教学与 15 步交互演练 | `TourHandbookModal.tsx`、`TourMinimalPrompt.tsx`、`useTourGuide.ts` |
 | 站点元数据 | `scrapers/registry.py`、站点模块；保护范围见台账 |
