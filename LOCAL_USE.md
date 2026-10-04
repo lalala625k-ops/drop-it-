@@ -6,7 +6,9 @@
 
 修改前端代码后，在 `frontend/` 目录执行一次 `npm run build`，再刷新网页即可看到新版本。后端代码改动需要重启服务。启动失败时查看 `%LOCALAPPDATA%\InfiniteCanvasNote\local_site.log`。若 5173 端口被其他程序占用，先关闭原来的 npm/Vite 开发服务，再重新双击。
 
-`run_app.bat` 和 `npm run dev` 仍属于开发入口。日常打开网站使用 `open_site.bat`。
+`run_app.bat` 和 `npm run dev` 仍属于网页端开发入口。日常打开网站使用 `open_site.bat`。
+
+若使用原生桌面端应用，可直接双击根目录的 **`启动桌面版.bat`**（或执行 `desktop\run.bat`）；开发调试桌面端时使用 **`desktop\run_dev.bat`**（支持 Vite HMR 实时热更）；桌面版详见 [`DESKTOP_SPEC.md`](file:///c:/Users/lalala/Desktop/note/DESKTOP_SPEC.md)。
 
 ## 数据存储与跨机归档 (.note)
 

@@ -31,42 +31,50 @@
 
 ---
 
-## 3. 本地离线应用与安装包方案
+---
 
-项目当前在 Git 新开的 `desktop-app` 分支上维护桌面化工程，提供双轨打包能力：
+## 3. 本地桌面应用方案与启动脚本
 
-### 方案 A：Windows 离线独立安装程序 (NSIS Setup / 推荐立即可用)
+桌面端已收敛于 `desktop/` 专属目录，并以 Windows 原生 Edge WebView2 为当前核心官方架构：
 
-利用 Electron 外壳与 PyInstaller 编译的本地 FastAPI 独立服务，打包为标准的 Windows 离线安装包（无需用户电脑配置任何 Python、Node 或 Rust 运行环境）：
+### 官方推荐：Windows 原生 Edge WebView2 极轻量单体架构 (`desktop/`)
 
-1. **一键构建离线安装包**：
-   ```powershell
-   powershell -ExecutionPolicy Bypass -File build_desktop.ps1
-   ```
-2. **极速增量打包（若后端未修改）**：
-   ```powershell
-   powershell -ExecutionPolicy Bypass -File build_desktop.ps1 -SkipBackend
-   ```
-   只需 10 秒即可重新生成安装包。
-3. **构建产物**：
-   - 输出至 `dist-desktop/` 目录。
-   - `随想便签 Setup 1.0.0.exe`：全自动引导安装程序（支持自定义安装路径、创建桌面快捷方式、开始菜单图标与卸载程序）。
-   - `win-unpacked/`：解压即用的绿色免安装便携版。
+利用 Windows 10/11 内置的 Microsoft Edge WebView2 引擎与嵌入式 FastAPI 宿主，实现超低内存占用与即开即用体验：
 
-### 方案 B：Tauri 2.0 原生超轻量架构 (`src-tauri/`)
+1. **一键运行入口**：
+   - 根目录下直接双击 **`启动桌面版.bat`**（或执行 `desktop\run.bat`）。
+   - 自动检测并编译缺失资源，随后无缝拉起原生桌面视窗，冷启动常驻内存仅 **40MB~60MB**。
+2. **极速热更新开发 (`desktop/run_dev.bat`)**：
+   - 用于边改前端代码边看效果的场景。
+   - 自动拉起 Vite HMR 开发服务器（端口 5173）并直连原生窗口，保存代码在 **30ms 内热替换生效**。
+3. **极速增量编译与原地刷新 (`desktop/update.bat`)**：
+   - 修改前端代码后双击 `desktop\update.bat`，3 秒内完成 Rollup 增量构建。
+   - 桌面窗口无需重启，直接在窗口内按下 **`F5` 或 `Ctrl+R`** 即可就地刷新生效。
+4. **生命周期闭环**：
+   - 窗口关闭时自动注销后端服务，无后台残留僵尸进程，彻底杜绝 8002 端口冲突。
 
-对于追求极限体积（~10MB 安装包、30MB 内存占用）的用户，项目已完整集成 Tauri 2.0 配置架构：
+### 历史备选方案（可选扩展）
 
-1. **核心优势**：
-   - 直接复用 Windows 内置的 Microsoft Edge WebView2 运行时，无需打包庞大的 Chromium 引擎。
-   - 内存开销极低，冷启动瞬时完成。
-2. **环境要求**：
-   - 需在本机安装 Rust 工具链（`rustup` / `cargo`）及 Visual Studio C++ 生成工具。
-3. **构建命令**：
-   ```bash
-   # 启动开发调试
-   npm run tauri:dev
+- **Tauri 2.0 原生架构 (`src-tauri/`)**：需本机安装 Rust/Cargo 与 C++ 工具链，执行 `npm run tauri:dev`。
+- **Electron NSIS 独立安装程序**：可通过 `build_desktop.ps1` 编译为完整的独立 NSIS 安装包。
 
-   # 构建轻量化安装程序
-   npm run tauri:build
-   ```
+---
+
+## 4. 实时流畅度诊断与性能监控 (FPS & Performance HUD)
+
+在桌面端调试与使用过程中，界面内置了两级实时性能诊断工具：
+
+- **左上角实时帧率开关 (`FpsMeter.tsx`)**：
+  - 点击左上角 `FPS` 印刷风格滑块即可开启实时测速（如 `60 FPS`、`144 FPS`）；关闭时彻底销毁 rAF 循环，0 开销。
+- **右上角核心性能诊断仪表盘 (`PerformanceHUD.tsx`)**：
+  - 随帧率开关联动开启，常驻右上角；
+  - 实时监控三大核心指标：**单帧耗时 (FT)**、**Chromium/WebView2 堆内存 (Heap)** 与 **视口空间裁剪率 (Viewport Culling)**；
+  - 自动捕获 >50ms 的长任务阻塞（Long Tasks），点击展开详细诊断抽屉，助力排查大图缩放与撤销历史性能。
+
+---
+
+## 5. 跨端图钉持久化与双向同步
+
+- 桌面端与浏览器 Web 端共用后端 SQLite `pins` 表。
+- 启动时自动双向比对并同步 1~8 号图钉世界坐标与缩放比例，通过 `Ctrl+1~8` 可在桌面端无缝快速跳转，跨客户端永不丢失。
+

@@ -2,7 +2,7 @@
 
 > **同步日期**：2026-10-04。本文说明当前工作区的结构、职责和数据流；产品行为见 `product_requirements_document.md`，视觉规则见 `DESIGN_SPEC.md`，站点保护范围见 `image_parsing_rules.md`。已知实现限制应明确记录，不能把计划能力写成已经实现。
 
-> **桌面版隔离**：桌面壳、打包脚本和使用说明保留在独立的 `codex/desktop-app` 分支与 `C:/Users/lalala/.codex/worktrees/desktop-app/note` 检出目录；网页版主目录不再包含这些专用文件。后续网页版提交不会自动进入桌面分支，待网页版稳定后再移植。两版现有运行数据仍可共用 `%LOCALAPPDATA%/InfiniteCanvasNote/data`；`backend/services/storage.py` 使用 SQLite WAL 和修订号，`backend/routes/migration.py` 接收旧浏览器数据。画布视口裁剪使用空间索引，远景大量对象由 `FarCanvas.tsx` 简化绘制。
+> **桌面端与网页端架构**：桌面端所有专用外壳与启动脚本已收敛至 `desktop/` 专属目录（详见 `DESKTOP_SPEC.md` 与 `desktop/README.md`），基于 Windows 原生 Edge WebView2 与单体 FastAPI 嵌入式架构，根目录保留 `启动桌面版.bat` 快速入口；网页版与桌面端共享核心前端（`frontend/`）与后端服务（`backend/`），数据统一存储于 `%LOCALAPPDATA%/InfiniteCanvasNote/data`。`backend/services/storage.py` 使用 SQLite WAL，支持卡片、分组及 1~8 号图钉双向持久化跨端同步；画布视口裁剪使用空间索引，远景大量对象由 `FarCanvas.tsx` 简化绘制。
 
 ## 1. 架构与维护原则
 
