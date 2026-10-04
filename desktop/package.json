@@ -15,7 +15,7 @@
     "appId": "com.infinitecanvas.note",
     "productName": "随想便签",
     "directories": {
-      "output": "../dist-desktop"
+      "output": "../release-bin"
     },
     "files": [
       "main.cjs",

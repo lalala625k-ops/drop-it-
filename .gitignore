@@ -9,6 +9,7 @@ build/
 release/
 release-borderless/
 dist-desktop/
+release-bin/
 *.spec
 backend/dist/
 backend/build/
@@ -34,6 +35,7 @@ Thumbs.db
 # IDE configuration
 .vscode/
 .idea/
+.workbuddy-ai/
 
 # Notes database (tracked and backed up independently in Date-of-my-note repo)
 backend/data/

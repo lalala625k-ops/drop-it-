@@ -33,10 +33,14 @@ function startService(token) {
   const logDir = path.join(process.env.LOCALAPPDATA || app.getPath('userData'), 'InfiniteCanvasNote');
   try { fs.mkdirSync(logDir, { recursive: true }); } catch {}
   let stdioConfig = 'ignore';
+  let outFd = null;
   try {
-    const logStream = fs.createWriteStream(path.join(logDir, 'desktop_service.log'), { flags: 'a' });
-    stdioConfig = ['ignore', logStream, logStream];
-  } catch {}
+    const logFile = path.join(logDir, 'desktop_service.log');
+    outFd = fs.openSync(logFile, 'a');
+    stdioConfig = ['ignore', outFd, outFd];
+  } catch {
+    stdioConfig = 'ignore';
+  }
 
   const env = {
     ...process.env,
@@ -49,7 +53,17 @@ function startService(token) {
     ? path.join(process.resourcesPath, 'backend', 'pinboard-service.exe')
     : 'python';
   const args = app.isPackaged ? [] : ['-m', 'backend.desktop_server'];
-  service = spawn(command, args, { cwd: root, env, windowsHide: true, stdio: stdioConfig });
+  const workingDir = app.isPackaged ? path.dirname(process.execPath) : root;
+  service = spawn(command, args, { cwd: workingDir, env, windowsHide: true, stdio: stdioConfig });
+  service.on('error', (err) => {
+    try {
+      const logFile = path.join(logDir, 'desktop_service.log');
+      fs.appendFileSync(logFile, `Service spawn error: ${err}\n`);
+    } catch {}
+  });
+  if (outFd !== null) {
+    try { fs.closeSync(outFd); } catch {}
+  }
 }
 
 function startBrowserBridge() {
