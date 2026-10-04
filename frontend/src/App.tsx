@@ -13,6 +13,9 @@ import { CanvasModals } from './components/CanvasModals';
 import { ReverseResolutionPanel } from './components/ReverseResolutionPanel';
 import { RecognitionDiagnostics } from './components/RecognitionDiagnostics';
 import { RecognitionReport } from './utils/recognizeCardImage';
+import { useCanvasPins } from './hooks/useCanvasPins';
+import { PinInputModal } from './components/PinInputModal';
+import { CanvasPinsLayer } from './components/CanvasPinsLayer';
 
 import { computeCardFocusViewport } from './utils/canvas';
 import { getNowFormatted } from './utils/dateParser';
@@ -254,6 +257,12 @@ export default function App() {
     .filter((group) => group.kind === 'bundle')
     .map((group) => [group.id, (group.outlinePadding ?? 18) / 18])), [groups]);
 
+  const canvasPins = useCanvasPins({
+    viewportRef,
+    setViewport,
+    showToast,
+  });
+
   // Paste & Shortcuts
   const { handlePaste, handleDroppedData, pasteFromSystemClipboard } = useClipboardPaste({
     createCardAtCursor: actions.createCardAtCursor,
@@ -430,6 +439,7 @@ export default function App() {
     onRecognizeImageOCR: handleShortcutImageOCR,
     onRecognizeImageLink: handleShortcutImageLink,
     onFitCanvas: () => handleCanvasDoubleClick(canvasCards, fitGroups),
+    onJumpToPin: canvasPins.jumpToPin,
   });
 
   useEffect(() => {
@@ -529,10 +539,16 @@ export default function App() {
       case 'search': setIsSearchOpen(true); break;
       case 'copy': void clipboard.handleCopy(); break;
       case 'paste': void pasteFromSystemClipboard(); break;
+      case 'pin':
+        canvasPins.openPinPrompt(
+          canvasMenuPosition || mouseScreenRef.current,
+          mouseWorldRef.current
+        );
+        break;
       case 'fit': handleCanvasDoubleClick(canvasCards, fitGroups); break;
       case 'uniform-width': actions.handleUniformCardWidth(); break;
     }
-  }, [actions, bundles, canvasCards, canvasMenuPosition, clipboard, fitGroups, handleCanvasDoubleClick,
+  }, [actions, bundles, canvasCards, canvasMenuPosition, canvasPins, clipboard, fitGroups, handleCanvasDoubleClick,
     mouseScreenRef, mouseWorldRef, pasteFromSystemClipboard, viewportRef]);
 
   return (
@@ -624,6 +640,12 @@ export default function App() {
           willChange: 'transform',
         }}
       >
+        <CanvasPinsLayer
+          pins={canvasPins.pins}
+          onJump={canvasPins.jumpToPin}
+          onRemove={canvasPins.removePin}
+          zoom={viewport.zoom}
+        />
         <ParentLinkLines
           groups={displayGroups}
           cards={cards}
@@ -723,6 +745,14 @@ export default function App() {
         canUniformWidth={cards.length > 1}
         onCommand={handleCanvasCommand}
         onClose={() => setCanvasMenuPosition(null)} />}
+      {canvasPins.pinPrompt && (
+        <PinInputModal
+          prompt={canvasPins.pinPrompt}
+          existingPins={canvasPins.pins}
+          onConfirm={(num) => canvasPins.addOrUpdatePin(num, canvasPins.pinPrompt!.world, viewport.zoom)}
+          onClose={canvasPins.closePinPrompt}
+        />
+      )}
       {pieMenu.resolutionPanel && resolutionCard && (
         <ReverseResolutionPanel card={resolutionCard} viewport={viewport}
           resolution={pieMenu.resolutionPanel.resolution}

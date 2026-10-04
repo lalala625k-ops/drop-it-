@@ -1,4 +1,4 @@
-﻿import { useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 
 interface UseShortcutsProps {
   onNewCard: () => void;
@@ -29,6 +29,7 @@ interface UseShortcutsProps {
   onRecognizeImageOCR?: () => void;
   onRecognizeImageLink?: () => void;
   onFitCanvas?: () => void;
+  onJumpToPin?: (index: number) => boolean;
 }
 
 export function useShortcuts({
@@ -60,6 +61,7 @@ export function useShortcuts({
   onRecognizeImageOCR,
   onRecognizeImageLink,
   onFitCanvas,
+  onJumpToPin,
 }: UseShortcutsProps) {
   const isShiftPressedRef = useRef(false);
   const isSpacePressedRef = useRef(false);
@@ -92,10 +94,20 @@ export function useShortcuts({
         onFitCanvas?.();
         return;
       }
-      if (isCtrlOrMeta && !e.shiftKey && !e.altKey && e.key === '1') {
-        e.preventDefault();
-        onFitCanvas?.();
-        return;
+
+      // Ctrl + 1 ~ 8: Quick Jump to Pin
+      if (isCtrlOrMeta && !e.shiftKey && !e.altKey && ['1', '2', '3', '4', '5', '6', '7', '8'].includes(e.key)) {
+        const pinNum = parseInt(e.key, 10);
+        const handled = onJumpToPin?.(pinNum);
+        if (handled) {
+          e.preventDefault();
+          return;
+        }
+        if (e.key === '1') {
+          e.preventDefault();
+          onFitCanvas?.();
+          return;
+        }
       }
 
       // H Family: Title & Heading
@@ -273,6 +285,7 @@ export function useShortcuts({
     onMinimapOpen, onMinimapClose, onEditTitle, onClearTitle, onSetTime, onSetNow,
     onManageTags, onDisconnectParent, onDetachFromBundle, onUniformWidth,
     onReparseLink, onRecognizeImageOCR, onRecognizeImageLink, onFitCanvas,
+    onJumpToPin,
   ]);
 
   return { isShiftPressedRef, isSpacePressedRef, isAltPressedRef };

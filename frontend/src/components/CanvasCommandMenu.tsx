@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { MenuShortcutHint, useMenuShortcutHint } from './MenuShortcutHint';
 import { PieMenuSlot, pieGestureMoved, pieSectorAt, pieSlotPoint, placePieMenu } from '../utils/pieMenuGeometry';
 
-export type CanvasCommand = 'note' | 'parent' | 'group' | 'search' | 'copy' | 'paste' | 'fit' | 'uniform-width';
+export type CanvasCommand = 'note' | 'parent' | 'group' | 'pin' | 'search' | 'copy' | 'paste' | 'fit' | 'uniform-width';
 
 interface Props {
   position: { x: number; y: number };
@@ -20,6 +20,7 @@ const items: { id: CanvasCommand; label: string; description: string }[] = [
   { id: 'note', label: '便签', description: '新建便签' },
   { id: 'parent', label: '父级', description: '新建父物体' },
   { id: 'group', label: '成组', description: '将选中卡片组成 Group' },
+  { id: 'pin', label: '图钉', description: '在当前位置打图钉' },
   { id: 'search', label: '搜索', description: '搜索便签' },
   { id: 'copy', label: '复制', description: '复制选中对象' },
   { id: 'paste', label: '粘贴', description: '粘贴复制的对象' },
@@ -27,7 +28,7 @@ const items: { id: CanvasCommand; label: string; description: string }[] = [
   { id: 'uniform-width', label: '均宽', description: '统一所有卡片宽度' },
 ];
 const shortcuts: Partial<Record<CanvasCommand, string>> = {
-  note: 'Ctrl+N', parent: 'Ctrl+P', group: 'Ctrl+G', search: 'Ctrl+F / Ctrl+K',
+  note: 'Ctrl+N', parent: 'Ctrl+P', group: 'Ctrl+G', pin: 'Ctrl+1~8', search: 'Ctrl+F / Ctrl+K',
   copy: 'Ctrl+C', paste: 'Ctrl+V', fit: 'Shift+1', 'uniform-width': 'Ctrl+Shift+R',
 };
 
@@ -42,7 +43,7 @@ export const CanvasCommandMenu: React.FC<Props> = ({ position, canCopy, canPaste
       || item.id === 'uniform-width' && !canUniformWidth,
   }));
   const optionAt = (clientX: number, clientY: number) =>
-    pieSectorAt({ x: clientX, y: clientY }, center, scale, RADIUS, slots, 22.5);
+    pieSectorAt({ x: clientX, y: clientY }, center, scale, RADIUS, slots, 360 / (items.length * 2));
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose();
