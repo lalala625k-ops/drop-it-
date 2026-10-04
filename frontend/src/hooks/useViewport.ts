@@ -32,7 +32,7 @@ export function saveViewportToStorage(vp: Viewport) {
   }
 }
 
-export function useViewport() {
+export function useViewport(options?: { invertWheelZoom?: boolean }) {
   const [viewport, setViewport] = useState<Viewport>(() => getSavedViewport() || { x: 0, y: 0, zoom: 1.0 });
   const viewportRef = useRef<Viewport>(viewport);
   viewportRef.current = viewport;
@@ -84,7 +84,8 @@ export function useViewport() {
     }
 
     e.preventDefault();
-    const zoomFactor = e.deltaY < 0 ? 1.12 : 0.88;
+    const isZoomIn = options?.invertWheelZoom ? e.deltaY > 0 : e.deltaY < 0;
+    const zoomFactor = isZoomIn ? 1.12 : 0.88;
     const { clientX, clientY } = e;
 
     setViewport((prev) => {
@@ -93,7 +94,7 @@ export function useViewport() {
       const nextY = clientY - (clientY - prev.y) * (nextZoom / prev.zoom);
       return { x: nextX, y: nextY, zoom: nextZoom };
     });
-  }, []);
+  }, [options?.invertWheelZoom]);
 
   // Double click card: smooth 80% focus toggle
   const handleCardDoubleClick = useCallback((card: Card) => {

@@ -3,8 +3,9 @@ import sys
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from backend.services.data_paths import DATA_DIR
+from backend.services.data_paths import DATA_DIR, get_assets_dir, get_screenshots_dir
 from backend.routes.migration import router as migration_router
+from backend.routes.settings import router as settings_router
 
 # Ensure root directory is in sys.path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -28,20 +29,30 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-data_dir = str(DATA_DIR)
-screenshots_dir = os.path.join(data_dir, "screenshots")
-assets_dir = os.path.join(data_dir, "assets")
 
-os.makedirs(screenshots_dir, exist_ok=True)
-os.makedirs(assets_dir, exist_ok=True)
+class DynamicStaticFiles(StaticFiles):
+    def __init__(self, dir_getter, **kwargs):
+        self.dir_getter = dir_getter
+        initial_dir = str(dir_getter())
+        os.makedirs(initial_dir, exist_ok=True)
+        super().__init__(directory=initial_dir, **kwargs)
 
-app.mount("/api/screenshots", StaticFiles(directory=screenshots_dir), name="screenshots")
-app.mount("/api/assets", StaticFiles(directory=assets_dir), name="assets")
+    def get_path(self, scope):
+        current_dir = str(self.dir_getter())
+        if self.directory != current_dir:
+            self.directory = current_dir
+            self.all_directories = [current_dir]
+        return super().get_path(scope)
+
+
+app.mount("/api/screenshots", DynamicStaticFiles(get_screenshots_dir), name="screenshots")
+app.mount("/api/assets", DynamicStaticFiles(get_assets_dir), name="assets")
 
 app.include_router(cards_router)
 app.include_router(parser_router)
 app.include_router(assets_router)
 app.include_router(migration_router)
+app.include_router(settings_router)
 
 @app.get("/api/health")
 async def health():

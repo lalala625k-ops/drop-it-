@@ -36,6 +36,7 @@ interface CanvasModalsProps {
   onSelectSearchCard: (card: Card) => void;
   // Minimap
   isMinimapExpanded: boolean;
+  showCornerMinimap?: boolean;
 }
 
 export const CanvasModals: React.FC<CanvasModalsProps> = ({
@@ -63,6 +64,7 @@ export const CanvasModals: React.FC<CanvasModalsProps> = ({
   onCloseSearch,
   onSelectSearchCard,
   isMinimapExpanded,
+  showCornerMinimap = true,
 }) => {
   const menuSource = activePieMenu?.target;
   const menuTarget: PieMenuTarget | null = !menuSource ? null
@@ -119,13 +121,15 @@ export const CanvasModals: React.FC<CanvasModalsProps> = ({
         onSelectCard={onSelectSearchCard}
       />
 
-      <MinimapNav
-        expanded={false}
-        cards={minimapCards}
-        groups={groups}
-        viewport={viewport}
-        onNavigate={setViewport}
-      />
+      {showCornerMinimap && (
+        <MinimapNav
+          expanded={false}
+          cards={minimapCards}
+          groups={groups}
+          viewport={viewport}
+          onNavigate={setViewport}
+        />
+      )}
       {isMinimapExpanded && <MinimapNav
         expanded
         cards={minimapCards}

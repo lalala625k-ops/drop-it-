@@ -7,10 +7,12 @@ from contextlib import closing
 from pathlib import Path
 from typing import Any, Dict
 
-from backend.services.data_paths import DATA_DIR, LEGACY_DATA_DIR, ASSETS_DIR, SCREENSHOTS_DIR
+from backend.services.data_paths import (
+    DATA_DIR, LEGACY_DATA_DIR, ASSETS_DIR, SCREENSHOTS_DIR,
+    get_data_dir, get_db_file, get_assets_dir, get_screenshots_dir
+)
 
 _lock = threading.RLock()
-_db_file = DATA_DIR / "board.sqlite3"
 
 
 def _legacy_payload() -> Dict[str, Any]:
@@ -24,15 +26,20 @@ def _legacy_payload() -> Dict[str, Any]:
 
 
 def _prepare_directory() -> None:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    ASSETS_DIR.mkdir(exist_ok=True)
-    SCREENSHOTS_DIR.mkdir(exist_ok=True)
-    if _db_file.exists() or DATA_DIR == LEGACY_DATA_DIR:
+    current_data_dir = get_data_dir()
+    current_assets_dir = get_assets_dir()
+    current_screenshots_dir = get_screenshots_dir()
+    db_file = get_db_file()
+
+    current_data_dir.mkdir(parents=True, exist_ok=True)
+    current_assets_dir.mkdir(exist_ok=True)
+    current_screenshots_dir.mkdir(exist_ok=True)
+    if db_file.exists() or current_data_dir == LEGACY_DATA_DIR:
         return
     source = LEGACY_DATA_DIR / "cards.json"
     if not source.is_file():
         return
-    backup = DATA_DIR / "migration-backup"
+    backup = current_data_dir / "migration-backup"
     if not backup.exists():
         backup.mkdir()
         shutil.copy2(source, backup / "cards.json")
@@ -42,7 +49,7 @@ def _prepare_directory() -> None:
                 shutil.copytree(old, backup / name)
     for name in ("assets", "screenshots"):
         old = LEGACY_DATA_DIR / name
-        target = DATA_DIR / name
+        target = current_data_dir / name
         if old.is_dir():
             for item in old.iterdir():
                 if item.is_file() and not (target / item.name).exists():
@@ -51,7 +58,7 @@ def _prepare_directory() -> None:
 
 def _connect() -> sqlite3.Connection:
     _prepare_directory()
-    connection = sqlite3.connect(_db_file, timeout=30)
+    connection = sqlite3.connect(get_db_file(), timeout=30)
     connection.execute("PRAGMA journal_mode=WAL")
     connection.execute("PRAGMA busy_timeout=30000")
     connection.execute("CREATE TABLE IF NOT EXISTS objects (kind TEXT NOT NULL, id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(kind,id))")
@@ -115,6 +122,21 @@ def replace_all(base_revision: int, data: Dict[str, Any]) -> int:
                                        (kind, item["id"], json.dumps(item, ensure_ascii=False)))
             revision += 1
             connection.execute("UPDATE meta SET value=? WHERE key='revision'", (str(revision),))
+    return revision
+
+
+def force_replace_all(data: Dict[str, Any]) -> int:
+    with _lock, closing(_connect()) as connection:
+        with connection:
+            row = connection.execute("SELECT value FROM meta WHERE key='revision'").fetchone()
+            revision = int(row[0]) if row else 0
+            connection.execute("DELETE FROM objects")
+            for kind, name in (("card", "cards"), ("group", "groups")):
+                for item in data.get(name, []):
+                    connection.execute("INSERT INTO objects VALUES (?,?,?)",
+                                       (kind, item["id"], json.dumps(item, ensure_ascii=False)))
+            revision += 1
+            connection.execute("INSERT OR REPLACE INTO meta VALUES ('revision', ?)", (str(revision),))
     return revision
 
 

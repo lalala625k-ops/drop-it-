@@ -144,6 +144,11 @@ export function useCanvasPins({ viewportRef, setViewport, showToast }: UseCanvas
     };
   }, []);
 
+  const replacePins = useCallback((newPins: CanvasPin[]) => {
+    setPins(newPins);
+    savePins(newPins);
+  }, []);
+
   return {
     pins,
     pinPrompt,
@@ -153,5 +158,6 @@ export function useCanvasPins({ viewportRef, setViewport, showToast }: UseCanvas
     updatePinPosition,
     removePin,
     jumpToPin,
+    replacePins,
   };
 }

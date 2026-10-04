@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { ShortcutSettings, matchShortcut } from './useSettings';
 
 interface UseShortcutsProps {
   onNewCard: () => void;
@@ -30,6 +31,8 @@ interface UseShortcutsProps {
   onRecognizeImageLink?: () => void;
   onFitCanvas?: () => void;
   onJumpToPin?: (index: number) => boolean;
+  shortcutsConfig?: ShortcutSettings;
+  onOpenSettings?: () => void;
 }
 
 export function useShortcuts({
@@ -62,6 +65,8 @@ export function useShortcuts({
   onRecognizeImageLink,
   onFitCanvas,
   onJumpToPin,
+  shortcutsConfig,
+  onOpenSettings,
 }: UseShortcutsProps) {
   const isShiftPressedRef = useRef(false);
   const isSpacePressedRef = useRef(false);
@@ -133,17 +138,53 @@ export function useShortcuts({
         return;
       }
 
+      // Open Settings: Ctrl+, or customized
+      if (shortcutsConfig?.openSettings ? matchShortcut(e, shortcutsConfig.openSettings) : (isCtrlOrMeta && (e.key === ',' || e.code === 'Comma'))) {
+        e.preventDefault();
+        onOpenSettings?.();
+        return;
+      }
+
+      // New Card: Ctrl+N or customized
+      if (shortcutsConfig?.newCard ? matchShortcut(e, shortcutsConfig.newCard) : (isCtrlOrMeta && !e.shiftKey && !e.altKey && (e.key === 'n' || e.key === 'N'))) {
+        e.preventDefault();
+        onNewCard();
+        return;
+      }
+
+      // Search: Ctrl+K / Ctrl+F or customized
+      if (shortcutsConfig?.search ? matchShortcut(e, shortcutsConfig.search) : (isCtrlOrMeta && !e.shiftKey && !e.altKey && (e.key === 'f' || e.key === 'F' || e.key === 'k' || e.key === 'K'))) {
+        e.preventDefault();
+        onSearch?.();
+        return;
+      }
+
+      // Auto Pack: Ctrl+P / Ctrl+B or customized
+      if (shortcutsConfig?.autoPack ? matchShortcut(e, shortcutsConfig.autoPack) : (isCtrlOrMeta && !e.shiftKey && !e.altKey && (e.key === 'b' || e.key === 'B'))) {
+        e.preventDefault();
+        onAutoPack();
+        return;
+      }
+
+      // New Parent: Ctrl+J or customized
+      if (shortcutsConfig?.newParent ? matchShortcut(e, shortcutsConfig.newParent) : (isCtrlOrMeta && !e.shiftKey && !e.altKey && (e.key === 'j' || e.key === 'J'))) {
+        e.preventDefault();
+        onGroup();
+        return;
+      }
+
+      // Reset Size: Ctrl+O or customized
+      if (shortcutsConfig?.resetSize ? matchShortcut(e, shortcutsConfig.resetSize) : (isCtrlOrMeta && !e.shiftKey && !e.altKey && (e.key === 'o' || e.key === 'O'))) {
+        e.preventDefault();
+        onResetSize();
+        return;
+      }
+
       // R Family: Reset size (Ctrl+R) & Resize uniform width (Ctrl+Shift+R)
       if (isCtrlOrMeta && !e.altKey && (e.key === 'r' || e.key === 'R')) {
         e.preventDefault();
         if (e.shiftKey) onUniformWidth?.();
         else onResetSize();
-        return;
-      }
-      // Also keep legacy Ctrl+O for backward compatibility
-      if (isCtrlOrMeta && !e.shiftKey && !e.altKey && (e.key === 'o' || e.key === 'O')) {
-        e.preventDefault();
-        onResetSize();
         return;
       }
 
@@ -168,13 +209,6 @@ export function useShortcuts({
         return;
       }
 
-      // B Family: Box / Auto Pack (Ctrl+B)
-      if (isCtrlOrMeta && !e.shiftKey && !e.altKey && (e.key === 'b' || e.key === 'B')) {
-        e.preventDefault();
-        onAutoPack();
-        return;
-      }
-
       // U Family: URL Reparse (Ctrl+U)
       if (isCtrlOrMeta && !e.shiftKey && !e.altKey && (e.key === 'u' || e.key === 'U')) {
         e.preventDefault();
@@ -187,20 +221,6 @@ export function useShortcuts({
         e.preventDefault();
         if (e.shiftKey) onRecognizeImageLink?.();
         else onRecognizeImageOCR?.();
-        return;
-      }
-
-      // Ctrl + N (New blank text card)
-      if (isCtrlOrMeta && !e.shiftKey && !e.altKey && (e.key === 'n' || e.key === 'N')) {
-        e.preventDefault();
-        onNewCard();
-        return;
-      }
-
-      // Ctrl + F or Ctrl + K (Search cards)
-      if (isCtrlOrMeta && !e.shiftKey && !e.altKey && (e.key === 'f' || e.key === 'F' || e.key === 'k' || e.key === 'K')) {
-        e.preventDefault();
-        onSearch?.();
         return;
       }
 
@@ -285,7 +305,7 @@ export function useShortcuts({
     onMinimapOpen, onMinimapClose, onEditTitle, onClearTitle, onSetTime, onSetNow,
     onManageTags, onDisconnectParent, onDetachFromBundle, onUniformWidth,
     onReparseLink, onRecognizeImageOCR, onRecognizeImageLink, onFitCanvas,
-    onJumpToPin,
+    onJumpToPin, shortcutsConfig, onOpenSettings,
   ]);
 
   return { isShiftPressedRef, isSpacePressedRef, isAltPressedRef };

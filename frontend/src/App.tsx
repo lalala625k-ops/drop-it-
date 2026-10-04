@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
-import { Card } from './types';
+import { Card, Viewport } from './types';
 import { CardComponent } from './components/CardComponent';
 import { GroupComponent } from './components/GroupComponent';
 import { BundleGroupComponent } from './components/BundleGroupComponent';
@@ -16,6 +16,8 @@ import { RecognitionReport } from './utils/recognizeCardImage';
 import { useCanvasPins } from './hooks/useCanvasPins';
 import { PinInputModal } from './components/PinInputModal';
 import { CanvasPinsLayer } from './components/CanvasPinsLayer';
+import { useSettings } from './hooks/useSettings';
+import { SettingsModal } from './components/SettingsModal';
 
 import { computeCardFocusViewport } from './utils/canvas';
 import { getNowFormatted } from './utils/dateParser';
@@ -93,6 +95,14 @@ export default function App() {
   }, [toast]);
 
   // Base Canvas & State Hooks
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const {
+    settings,
+    updateShortcuts,
+    updateGeneral,
+    resetShortcuts,
+  } = useSettings();
+
   const { pushHistory, undo } = useHistory();
   const {
     viewport,
@@ -103,7 +113,7 @@ export default function App() {
     handleWheel,
     handleCardDoubleClick,
     handleCanvasDoubleClick,
-  } = useViewport();
+  } = useViewport({ invertWheelZoom: settings.general.invertWheelZoom });
 
   const {
     selectedCardIds,
@@ -440,7 +450,25 @@ export default function App() {
     onRecognizeImageLink: handleShortcutImageLink,
     onFitCanvas: () => handleCanvasDoubleClick(canvasCards, fitGroups),
     onJumpToPin: canvasPins.jumpToPin,
+    shortcutsConfig: settings.shortcuts,
+    onOpenSettings: () => setIsSettingsOpen(true),
   });
+
+  const handleImportComplete = useCallback((data: {
+    cards: Card[];
+    groups: any[];
+    viewport?: Viewport;
+    pins?: any[];
+  }) => {
+    pushHistory(cardsRef.current, groupsRef.current);
+    actions.commitState(data.cards, data.groups);
+    if (data.viewport) {
+      setViewport(data.viewport);
+    }
+    if (data.pins && Array.isArray(data.pins)) {
+      canvasPins.replacePins(data.pins);
+    }
+  }, [actions.commitState, canvasPins, pushHistory, setViewport]);
 
   useEffect(() => {
     if (!clipboard.hasPendingPaste) return;
@@ -737,6 +765,7 @@ export default function App() {
           setViewport(computeCardFocusViewport(c, window.innerWidth, window.innerHeight));
         }}
         isMinimapExpanded={minimap.isMinimapExpanded}
+        showCornerMinimap={settings.general.minimapMode === 'always'}
       />
       {clipboard.pendingPaste && <ClipboardPastePreview snapshot={clipboard.pendingPaste}
         screen={clipboard.pasteScreenPosition} zoom={viewport.zoom} />}
@@ -760,16 +789,40 @@ export default function App() {
           onClose={pieMenu.closeResolutionPanel}
           onConfirm={pieMenu.handleConfirmCandidate} />
       )}
-      {recognitionReports.length > 0 && !diagnosticsOpen && (
-        <button type="button" onClick={() => setDiagnosticsOpen(true)}
-          className="fixed right-3 top-3 z-[115] border border-ink bg-paper px-3 py-2 text-xs font-bold text-ink">
-          识别记录 {recognitionReports.length}
+      <div className="fixed right-3 top-3 z-[115] flex items-center gap-2">
+        {recognitionReports.length > 0 && !diagnosticsOpen && (
+          <button type="button" onClick={() => setDiagnosticsOpen(true)}
+            className="border border-ink bg-paper px-3 py-1.5 text-xs font-bold text-ink hover:bg-ink hover:text-paper transition-colors cursor-pointer rounded-[10px]">
+            识别记录 {recognitionReports.length}
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => setIsSettingsOpen(true)}
+          title="设置 (Ctrl+,)"
+          className="border border-ink bg-paper px-3 py-1.5 text-xs font-bold text-ink hover:bg-ink hover:text-paper transition-colors cursor-pointer rounded-[10px]"
+        >
+          ⚙ 设置
         </button>
-      )}
+      </div>
       {diagnosticsOpen && <RecognitionDiagnostics reports={recognitionReports}
         activeReviewCardId={pieMenu.resolutionPanel?.cardId}
         onConfirmCandidate={pieMenu.handleConfirmCandidate}
         onClose={() => setDiagnosticsOpen(false)} />}
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        settings={settings}
+        onUpdateShortcuts={updateShortcuts}
+        onUpdateGeneral={updateGeneral}
+        onResetShortcuts={resetShortcuts}
+        cards={cards}
+        groups={displayGroups}
+        viewport={viewport}
+        pins={canvasPins.pins}
+        onImportComplete={handleImportComplete}
+        showToast={showToast}
+      />
       {toast && <div role="status" aria-live="polite"
         className="fixed bottom-6 left-1/2 z-[120] max-w-[min(90vw,480px)] -translate-x-1/2 border border-ink bg-paper px-4 py-3 text-center text-xs text-ink shadow-xl pointer-events-none">
         {toast}

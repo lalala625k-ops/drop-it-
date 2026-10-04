@@ -94,6 +94,7 @@
 | `useShortcuts.ts` | 新建、删除、撤销、编组/解散、Alt/Ctrl+方向键对齐、复制、搜索、备份、粘贴监听；Ctrl+1~8 快捷跳转图钉（无对应图钉时保留 Ctrl+1 全览）；M 键及失焦控制小地图 |
 | `useMinimapState.ts` | M 键控制常驻小地图的大图模式，几何映射在 `MinimapNav.tsx` |
 | `usePieMenuState.ts` | 以卡片、外层 Group、父物体的显式目标类型记录当前轮盘；处理日期/标题/标签及父物体颜色、图片识别、网页重新解析、历史与保存 |
+| `useSettings.ts` | 管理自定义快捷键映射与通用偏好（滚轮方向、小地图模式），保存在 `pinboard_settings_v1` |
 
 ### 3.4 组件层（`components/`）
 
@@ -114,7 +115,8 @@
 | `CanvasCommandMenu.tsx` | 空白处右键按下立即打开九等分扇区的命令饼菜单（便签、父级、成组、图钉、搜索、复制、粘贴、全览、均宽），按钮使用两个汉字的短标签；与对象菜单共用扇区手势、边缘定位与取消规则 |
 | `CanvasPinsLayer.tsx` | 在画布表面世界坐标渲染内凹倒角十字星与同心数字圆点图钉，支持按住拖拽自由平移、悬停数字弹跳、缩放自适应、点击平滑跳转、右键或右上角 ✕ 快速移除 |
 | `PinInputModal.tsx` | 极简直角印刷风格的图钉编号选择弹窗，提供 1~8 数字快速选择方格与占用提示，支持键盘单键 1~8 快速确认 |
-| `MarkdownContent.tsx` | 全局 4 处指定位置的 Markdown 语法解析与排版渲染组件，严格匹配一级 24px (900)、二级 18px (700) 与正文 15px (400) 字阶 |
+| `MarkdownView.tsx` | 全局 4 处指定位置的 Markdown 语法解析与排版渲染组件，严格匹配一级 24px (900)、二级 18px (700) 与正文 15px (400) 字阶 |
+| `SettingsModal.tsx` | 极简直角印刷风格设置弹窗，支持快捷键录制、本地存储目录查看/切换/数据迁移、完整便签包 (.note) 一键打包导出与无损解压还原、滚轮反转与小地图模式偏好 |
 | `GradientColorArc.tsx` | 将黄、粉、蓝、白渐变绘成左侧 64 档半圆环，悬停显示白色主环与凸出的当前色扇形，按点击或拖动位置取色并提交 |
 | `CanvasModals.tsx` | 聚合对象轮盘、焦点蒙版、搜索及小地图；解析显式菜单目标并按对象能力连接操作 |
 | `PieMenuFocusOverlay.tsx` | 对象轮盘打开时覆盖搜索弹窗的 Ink/30 模糊蒙版，并把当前对象的 DOM 快照原位显示在蒙版上方；外层 Group 同时保留可见的组内卡片 |
@@ -128,11 +130,12 @@
 
 | 文件/目录 | 职责 |
 | :--- | :--- |
-| `main.py` | FastAPI/CORS、三个路由模块及 `/api/assets`、`/api/screenshots` 静态目录 |
+| `main.py` | FastAPI/CORS、路由模块及 DynamicStaticFiles 动态资源挂载 |
 | `routes/cards.py` | CardModel、GroupModel、PersistencePayload；GET 全量读取，POST 按对象保存并校验基础修订号 |
 | `routes/assets.py` | POST `/api/upload-asset`；Base64 解码，取 SHA256 前 16 个十六进制字符命名去重，返回静态 URL |
 | `routes/parser.py` | POST `/api/recognize-image` 和 `/api/resolve-image` 支持上传文件、Base64 JSON、原始请求体；GET `/api/fetch-metadata` |
-| `services/storage.py` | SQLite WAL 对象存储、修订号校验、旧 JSON 迁移及 Git 快照导出 |
+| `routes/settings.py` | GET/POST `/api/settings/storage-path` 数据目录查询与迁移；POST `/api/archive/export` 完整打包导出；POST `/api/archive/import` 完整解压还原 |
+| `services/storage.py` | SQLite WAL 对象存储、修订号校验、force_replace_all 全量覆盖还原、旧 JSON 迁移及 Git 快照导出 |
 | `services/ocr_service.py` | RapidOCR 初始化、Pillow 预处理、首行标题和全文；不可用或出错时返回失败结果 |
 | `services/screenshot_link_service.py` | 保留从 OCR 文本提取 B 站/X 直接链接或 BV 号的兼容函数；原有文字搜索不再进入主溯源链路 |
 | `services/bilibili_reverse_service.py` | 保留 OCR 几何提取与 B 站官方备用搜索接口；反向搜索与受保护的正向解析器独立 |
