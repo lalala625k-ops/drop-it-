@@ -67,7 +67,18 @@ export function useViewport(options?: { invertWheelZoom?: boolean }) {
     return () => window.removeEventListener('mousemove', handleMouseMove);
   }, [handleMouseMove]);
 
-  // Wheel zoom centered at mouse pointer.
+  const wheelRafRef = useRef<number | null>(null);
+  const pendingWheelRef = useRef<{ factor: number; clientX: number; clientY: number } | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (wheelRafRef.current !== null) {
+        window.cancelAnimationFrame(wheelRafRef.current);
+      }
+    };
+  }, []);
+
+  // Wheel zoom centered at mouse pointer (throttled via requestAnimationFrame for silky smooth 60/120fps).
   const handleWheel = useCallback((e: React.WheelEvent) => {
     const target = e.target as HTMLElement;
 
@@ -85,15 +96,33 @@ export function useViewport(options?: { invertWheelZoom?: boolean }) {
 
     e.preventDefault();
     const isZoomIn = options?.invertWheelZoom ? e.deltaY > 0 : e.deltaY < 0;
-    const zoomFactor = isZoomIn ? 1.12 : 0.88;
+    const step = Math.min(Math.abs(e.deltaY) / 100, 1.5);
+    const stepFactor = isZoomIn ? (1 + 0.12 * Math.max(0.6, step)) : (1 / (1 + 0.12 * Math.max(0.6, step)));
     const { clientX, clientY } = e;
 
-    setViewport((prev) => {
-      const nextZoom = clamp(prev.zoom * zoomFactor, MIN_CANVAS_ZOOM, 3.0);
-      const nextX = clientX - (clientX - prev.x) * (nextZoom / prev.zoom);
-      const nextY = clientY - (clientY - prev.y) * (nextZoom / prev.zoom);
-      return { x: nextX, y: nextY, zoom: nextZoom };
-    });
+    if (!pendingWheelRef.current) {
+      pendingWheelRef.current = { factor: stepFactor, clientX, clientY };
+    } else {
+      pendingWheelRef.current.factor *= stepFactor;
+      pendingWheelRef.current.clientX = clientX;
+      pendingWheelRef.current.clientY = clientY;
+    }
+
+    if (wheelRafRef.current === null) {
+      wheelRafRef.current = window.requestAnimationFrame(() => {
+        wheelRafRef.current = null;
+        if (!pendingWheelRef.current) return;
+        const { factor, clientX: cx, clientY: cy } = pendingWheelRef.current;
+        pendingWheelRef.current = null;
+        setViewport((prev) => {
+          const nextZoom = clamp(prev.zoom * factor, MIN_CANVAS_ZOOM, 3.0);
+          if (Math.abs(nextZoom - prev.zoom) < 0.0001) return prev;
+          const nextX = cx - (cx - prev.x) * (nextZoom / prev.zoom);
+          const nextY = cy - (cy - prev.y) * (nextZoom / prev.zoom);
+          return { x: nextX, y: nextY, zoom: nextZoom };
+        });
+      });
+    }
   }, [options?.invertWheelZoom]);
 
   // Double click card: smooth 80% focus toggle

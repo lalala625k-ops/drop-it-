@@ -76,3 +76,9 @@ textarea[data-text-editor]:not(:focus)::selection {
 .animate-tour-bounce {
   animation: tour-card-float 1.15s cubic-bezier(0.38, 0.05, 0.45, 1) infinite;
 }
+
+/* Invisible drag surface for the desktop window; the canvas remains visible beneath it. */
+.desktop-drag-region {
+  -webkit-app-region: drag;
+}
+

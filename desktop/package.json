@@ -1,0 +1,43 @@
+{
+  "name": "infinite-canvas-note-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis"
+  },
+  "devDependencies": {
+    "electron": "^38.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "com.infinitecanvas.note",
+    "productName": "随想便签",
+    "directories": {
+      "output": "../dist-desktop"
+    },
+    "files": [
+      "main.cjs",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../backend/dist/pinboard-service.exe",
+        "to": "backend/pinboard-service.exe"
+      },
+      {
+        "from": "../frontend/dist",
+        "to": "web"
+      }
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}

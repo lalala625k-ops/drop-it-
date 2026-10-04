@@ -1,0 +1,17 @@
+{
+  "name": "infinite-canvas-note-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "npm --prefix frontend run dev",
+    "build": "npm --prefix frontend run build",
+    "desktop:start": "npm --prefix desktop start",
+    "desktop:dist": "powershell -ExecutionPolicy Bypass -File build_desktop.ps1",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.12.1"
+  }
+}

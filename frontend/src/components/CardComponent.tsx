@@ -26,7 +26,7 @@ interface CardComponentProps {
   onDoubleClick: (card: Card) => void;
   onStartScale: (card: Card, startClientX: number, startWidth: number, startHeight: number) => void;
   onStartResize: (card: Card, handle: ResizeHandleDirection, e: React.MouseEvent) => void;
-  zoom: number;
+  isTinyThumbnail?: boolean;
   contentScale: number;
 }
 
@@ -43,14 +43,13 @@ const CardComponentInner: React.FC<CardComponentProps> = ({
   onDoubleClick,
   onStartScale,
   onStartResize,
-  zoom,
+  isTinyThumbnail = false,
   contentScale,
 }) => {
   const [hoverTimeout, setHoverTimeout] = useState<number | null>(null);
   const [showTooltip, setShowTooltip] = useState(false);
   const pointerDownPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const wasSelectedAtPointerDownRef = useRef(false);
-  const isTinyThumbnail = !!card.bundleId && Math.min(card.width, card.height) * zoom <= 20;
 
   const handleMouseDown = (e: React.MouseEvent) => {
     pointerDownPosRef.current = { x: e.clientX, y: e.clientY };
@@ -204,4 +203,4 @@ export const CardComponent = memo(CardComponentInner, (previous, next) =>
   previous.contentScale === next.contentScale &&
   previous.tourHint?.label === next.tourHint?.label &&
   previous.tourHint?.bounce === next.tourHint?.bounce &&
-  previous.zoom === next.zoom);
+  previous.isTinyThumbnail === next.isTinyThumbnail);

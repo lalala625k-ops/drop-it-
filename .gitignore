@@ -8,7 +8,11 @@ dist/
 build/
 release/
 release-borderless/
+dist-desktop/
 *.spec
+backend/dist/
+backend/build/
+src-tauri/target/
 
 # Python cache & virtual environments
 __pycache__/

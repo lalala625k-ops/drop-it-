@@ -678,6 +678,9 @@ export default function App() {
         e.preventDefault();
       }}
     >
+      {new URLSearchParams(window.location.search).has('desktop') && (
+        <div className="desktop-drag-region absolute left-0 right-[140px] top-0 h-9 z-[60]" aria-hidden="true" />
+      )}
       {farMode && <FarCanvas cards={visibleCards} groups={visibleGroups} viewport={viewport} />}
       <div
         data-canvas-surface
@@ -748,7 +751,7 @@ export default function App() {
             onDoubleClick={handleCardDoubleClick}
             onStartScale={(c, clientX) => canvasInteractions.handleStartCardScale(c, clientX)}
             onStartResize={(c, handle, e) => canvasInteractions.handleStartCardResize(c, handle, e)}
-            zoom={viewport.zoom}
+            isTinyThumbnail={!!card.bundleId && Math.min(card.width, card.height) * viewport.zoom <= 20}
           />
         ))}
 
