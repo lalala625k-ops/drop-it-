@@ -91,10 +91,12 @@ export function useCardClipboard({
 
   const stagePaste = useCallback((snapshot: CanvasClipboardSnapshot) => {
     if (!snapshot.cards.length && !snapshot.groups.length) return;
-    // Direct paste at mouse cursor position
-    commitSnapshot(snapshot, mouseWorldRef.current);
-    showToast('已在光标处粘贴');
-  }, [commitSnapshot, mouseWorldRef, showToast]);
+    setPasteScreenPosition({ ...mouseScreenRef.current });
+    setPendingPaste({
+      cards: snapshot.cards.map((card) => ({ ...card })),
+      groups: snapshot.groups.map((group) => ({ ...group })),
+    });
+  }, [mouseScreenRef]);
 
   const commitPendingPaste = useCallback((target: { x: number; y: number }) => {
     mouseWorldRef.current = target;
