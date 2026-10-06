@@ -6,13 +6,10 @@
 
 ## 1. 桌面端架构演进与设计理念
 
-在早期探索中，桌面端曾尝试过传统的 Electron 方案，但附带了巨大的包袱：
-- **Electron 痛点**：打包体积庞大（>280MB）、空载内存开销高（>350MB）、前后端多进程退出残留僵尸进程、构建与打包繁琐。
-
-经过全面轻量化架构升级后，本项目彻底重构为 **Windows 原生 Edge WebView2 + 单体 FastAPI 嵌入式宿主**：
-- **极小体积**：利用 Windows 10/11 内置的 Microsoft Edge WebView2 运行时（Evergreen 引擎），无任何 Chromium 冗余内核，分发仅需核心代码与静态资源。
-- **超低内存**：冷启动常驻内存由原 Electron 的 350MB 骤降至 **40MB~60MB**。
-- **单进程闭环生命周期**：由 Python 单进程同时守护后台 FastAPI 线程与原生视窗，窗口关闭时所有服务优雅释放，**0 端口冲突、0 僵尸后台残留**。
+开发和发布桌面端均使用 **Windows 原生 Edge WebView2 + FastAPI 本地服务**。开发态便于快速迭代和 HMR 调试，发布态使用 PyInstaller 固化 Python 服务与轻量 pywebview 启动壳：
+- **开发入口统一**：项目根目录 `npm run dev` 转调 `desktop/run_dev.bat`，由 `desktop/app.py` 管理 FastAPI 线程、Vite HMR 和 WebView2 窗口。Vite 只负责热更新与 API 代理，不自行启动后端。
+- **发布态自包含**：PyInstaller 将 FastAPI、OCR、Pillow 和模型运行库打进后端服务，启动壳与后端一起放入安装包；不依赖 Python 或 Node.js。
+- **独立数据目录**：程序文件和 `%LOCALAPPDATA%\InfiniteCanvasNote\data` 分离，升级和卸载不会删除画布数据。
 - **业务与视窗彻底解耦**：前端（`frontend/`）与后端（`backend/`）保持纯粹的跨平台 Web/API 能力，桌面端专属逻辑全部收敛在 `desktop/` 目录下。
 
 ```mermaid
@@ -42,6 +39,7 @@ flowchart TD
 | 层次 | 技术选型 | 版本/规范 | 选型优势与核心职责 |
 | :--- | :--- | :--- | :--- |
 | **原生视窗引擎** | **Microsoft Edge WebView2** | Evergreen (系统预置) | Windows 原生嵌入式浏览器控件，共享系统内核更新，0MB 引擎体积，硬件加速支持良好。 |
+| **发布视窗引擎** | **系统 Edge WebView2** | 由 pywebview 调用 | 不封装 Chromium；Windows 10/11 通常已提供 WebView2 Runtime。 |
 | **视窗桥接层** | **Python + pywebview** | 6.2.1 (WinForms 平台) | 极轻量 Windows 原生窗口控制器；管理窗体创建、尺寸记忆、无控制台静默运行与退出联动。 |
 | **嵌入式后端服务** | **FastAPI + Uvicorn** | FastAPI 0.115 / Uvicorn | 本地回环单例服务（127.0.0.1）；提供卡片增删改查、图钉双向同步、OCR 解析、WebP 缩略图服务。 |
 | **图片渲染金字塔** | **Pillow** | 12.3.0 (WebP 800px) | 负责图像长边 800px 质量 80% 的 WebP 缩略图流式转换；保留 Alpha 透明通道，支持 EXIF 自动旋正。 |
@@ -52,29 +50,44 @@ flowchart TD
 
 ## 3. 桌面端专属文件目录结构与职责 (`desktop/`)
 
-所有桌面端外壳、启动器和构建脚本已全部集中在 `desktop/` 目录下，根目录仅保留 1 个快速中转入口：
+桌面端外壳和启动器集中在 `desktop/`，根目录提供源码启动和发布目录入口：
 
 ```text
 note/
 ├── 启动桌面版.bat            # 根目录下的一键快捷拉起入口 (纯净 ANSI，转调 desktop\run.bat)
+├── 打开免安装版.bat          # 相对路径打开 release/Drop-it 0.1；本机另有不提交 Git 的 .lnk
 ├── desktop/                 # 🌟 桌面端专属工程目录
 │   ├── app.py               # 桌面端核心主程序 (Edge WebView2 运行时单体)
 │   ├── run.bat              # 日常生产运行脚本 (自动检测首编译，防闪退保护)
 │   ├── run_dev.bat          # 实时热更新开发脚本 (直连 Vite HMR，保存代码即生效)
 │   ├── update.bat           # 极速增量编译脚本 (3秒编译，窗口内按 F5 刷新即生效)
+│   ├── dev_server.py        # Vite 就绪检查与所属进程管理
+│   ├── close_checkpoint.py  # 关闭前确认暂存，清理所属服务进程树
+│   ├── icons/               # 应用图标；发布启动器使用 icon.ico
 │   └── README.md            # 桌面端简要指引
 ├── frontend/                # 前端画布源代码 (通用)
 └── backend/                 # 后端数据与算法服务 (通用)
 ```
 
-### 3.1 核心脚本详细职责
+### 3.2 Windows 发布构建
+
+在已安装 Node.js、Python、PyInstaller、7-Zip 和 NSIS 的开发机上执行根目录 `build_desktop.ps1`。脚本依次构建前端、生成 `backend/dist/pinboard-service.exe` 和 `desktop/dist/DropIt.exe`，再组装 `release/Drop-it 0.1/`、`release/Drop-it-0.1-Portable.zip` 和 `release/Drop-it-Setup-0.1.exe`。NSIS 可通过 `PINBOARD_MAKENSIS` 指定编译器，临时压缩目录遵循系统 TEMP/TMP 设置。发布包包含应用 Logo、OCR 运行库和图片服务；目标用户无需安装 Python 或 Node.js。
+
+安装版以当前用户权限安装到 `%LOCALAPPDATA%\Drop-it`，创建桌面与开始菜单快捷方式、注册卸载入口；卸载仅清理程序，保留 `Files` 与运行数据。打包器校验文件白名单，只允许两份 EXE、使用说明和指定 Template，若发现个人保存、恢复记录或额外文件则停止，支持 `--installer-only` 单独重新编译已验证的安装包。源码通过 Git 提交，发布程序通过 GitHub Releases 分发。
+
+开发依赖通过 `python -m pip install -r backend/requirements-desktop.txt` 和 `npm --prefix frontend install` 安装。WebView2 Runtime 使用微软官方系统运行时；应用图标位于 `desktop/icons/`，构建启动器时明确指定 `desktop/icons/icon.ico`。
+
+示例文件独立放在 EXE 同级的 `Files/Template/Template一.drop`，该目录只包含这一份文件，打包时仅复制 `desktop/Template/Template一.drop`，不再把旧模板嵌入后端 EXE。首次启动直接恢复示例的卡片、分组、视口与图钉；首次使用“打开”默认进入 `Files/Template` 目录，之后记忆个人工作区路径。移动免安装版时保留整个文件夹，模板路径随 EXE 位置变化。修改示例后首次保存仍要求选择个人文件。
+
+### 3.3 核心脚本详细职责
 
 #### 1. `desktop/app.py`
 - **自适应根目录解析**：通过 `PROJECT_ROOT = Path(__file__).resolve().parent.parent` 自动定位上层 `frontend` 与 `backend`，支持任何路径移动。
 - **智能端口管理**：默认优先使用 `8002` 端口（与 Vite 代理端口保持严格一致）；启动前通过 `/api/health` 检查，若已有后台服务运行则自动复用，杜绝 `[Errno 10048]` 端口占用冲突。
 - **多模式自适应分流**：
-  - 传入 `--dev` 或探测到 5173 端口活跃时：直连 `http://127.0.0.1:5173`，开启 F12 开发者工具，激活无感 HMR 热更。
+  - 传入 `--dev` 或探测到 `127.0.0.1:5173/@vite/client` 已就绪时：直连 `http://127.0.0.1:5173`，开启 F12 开发者工具，激活无感 HMR 热更。Vite 明确绑定 IPv4，直接通过 Node 启动；后端和前端 HTTP 就绪后才打开窗口，启动失败显示日志路径，避免跳转到拒绝连接页。
   - 默认模式：直连内置 FastAPI 的静态挂载地址 `http://127.0.0.1:8002`，加载本地预编译好的 `frontend/dist` 资源。
+- **极简无边框窗口**：桌面 URL 带 `desktop=1` 标记，隐藏系统标题栏与左上角工具栏；前端在右上角保留透明线框窗口按钮，鼠标进入顶部 40px 区域（与标题栏完整高度一致）时自动显示 40px 高的标题栏。左键拖动事件通过 `pywebview-drag-region` 交给宿主，双击最大化/还原；离开后收起，拖动及窗口按钮键盘聚焦时保持显示。
 - **控制台安全配置**：重构 `sys.stdout` 与 `sys.stderr` 编码为 UTF-8，彻底解决 Windows 控制台因特殊字符抛出 `UnicodeEncodeError` 的问题。
 
 #### 2. `desktop/run_dev.bat`
@@ -92,7 +105,7 @@ note/
 
 ---
 
-## 4. PureRef 级高帧率性能重构
+## 4. 高帧率性能重构
 
 为了让画布在包含几十甚至数百张 4K/8K 图片时依旧保持 60/120/144 FPS 丝滑缩放，桌面端落地了两项核心渲染优化：
 
@@ -110,16 +123,9 @@ note/
 - **动态卸载离屏节点**：在 `useVirtualViewport.ts` 中根据当前世界坐标视口边界加 350px 屏幕安全缓冲，离开视野的所有卡片 DOM 彻底从 React 树中卸载，WebView2 / Chromium 引擎立即释放解码显存。
 - **图钉与选中持久保护**：所有正被选中的卡片、正在拖动的卡片以及图钉引导对象始终强制保留，绝不在用户交互过程中闪烁或消失。
 
-### 4.3 实时流畅度诊断与性能监视器 (FPS & Performance HUD)
-为实时验证 WebView2 硬件加速与空间裁剪的实际调优表现，桌面端在界面提供了双向联动的调试监测系统：
-- **左上角实体印刷风实时帧率开关 (`FpsMeter.tsx`)**：
-  - 点击左上角 `FPS` 滑块即可开启动态帧率监测（如 `60 FPS`、`144 FPS`）；关闭时彻底解绑 `requestAnimationFrame`，达成 **0 CPU/GPU 额外开销**。
-- **右上角核心性能诊断仪表盘 (`PerformanceHUD.tsx`)**：
-  - 随帧率开关同步联动，常驻右上角工具栏前侧，展示三大核心流畅度指标：
-    1. **单帧耗时 (Frame Time, FT)**：主线程每帧渲染延迟（基准：60Hz 下 ≤16.6ms，144Hz 下 ≤6.9ms），比起均值 FPS 更敏锐捕获瞬时掉帧与主线程毛刺；
-    2. **JS 堆内存 (Heap Memory)**：实时读取 WebView2 进程内存占用（如 `52 MB`），监控多图浏览与撤销栈的历史内存走势；
-    3. **视口空间裁剪率 (Viewport Culling)**：直观显示 `视口卡片数 / 总卡片数` 及裁剪百分比（如 `33/96卡 (66% 剔除)`），验证空间虚拟化运行健康度。
-  - **长任务阻塞侦测与诊断抽屉**：利用 `PerformanceObserver` 监听捕获 >50ms 的长任务阻塞（Long Tasks），点击胶囊展开直角诊断卡片，呈现 DOM 节点数与性能明细。
+### 4.3 当前桌面界面
+
+桌面端当前不挂载 FPS、性能 HUD 或识别调试面板，避免占用画布空间。无边框窗口通过 `desktop=1` 标记启用，右上角窗口按钮常驻；鼠标移到顶部时显示可拖动、可双击最大化/还原的标题栏，离开后自动收起，拖动及键盘聚焦窗口按钮时保持显示。标题栏覆盖画布，不改变保存的视口与卡片位置。
 
 ---
 
@@ -171,3 +177,7 @@ note/
 | **桌面版看不到网页版的旧图钉** | 旧图钉仍停留在外部浏览器的 localStorage 中 | 用你之前常用的浏览器打开一次网页版刷新一下，图钉会自动回写到数据库；切回桌面版按 `F5` 即可全部同步。 |
 | **桌面窗口中修改代码后未生效** | 生产模式加载的是旧的 `dist` | 双击 `desktop/update.bat` 重新编译（3 秒），切回桌面窗口按 `F5` 或 `Ctrl+R`；或者直接使用 `desktop/run_dev.bat` 开发模式。 |
 | **桌面端报告端口被占用** | 之前有残留的非正常退出进程 | `desktop/app.py` 已内置端口自愈与复用逻辑；若依然冲突，可在任务管理器中结束残留的 `python.exe` 进程。 |
+
+## 工作区暂存
+
+发布版默认在 EXE 同级的 Files 中创建 Template、Save、Temporary 三个文件夹，后台仅写恢复记录，正式 .drop 由手动保存更新。启动续接完整画板；正常关闭先异步确认暂存成功，失败保留窗口。浏览器退出为尽力刷新，强制终止恢复最近成功写入的版本。发布包仅包含指定的 Files/Template 示例及空 Save、Temporary 文件夹；用户保存和暂存内容不纳入构建输入或发布归档。

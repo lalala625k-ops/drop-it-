@@ -1,6 +1,6 @@
 # 随想便签 · 本地桌面版与打包指南 (Desktop & Packaging)
 
-> **最新架构说明**：桌面端已全面演进为 Windows 原生 Edge WebView2 极轻量单体架构（~25MB 分发体积，~50MB 运行内存）。完整技术栈与架构规范请参阅核心文档 👉 **[`DESKTOP_SPEC.md`](file:///c:/Users/lalala/Desktop/note/DESKTOP_SPEC.md)** 与 **[`desktop/README.md`](file:///c:/Users/lalala/Desktop/note/desktop/README.md)**。
+> **最新架构说明**：开发模式和发布版统一使用 Windows 原生 Edge WebView2。根目录 `npm run dev` 启动 WebView2 开发壳，发布包通过 PyInstaller 构建，目标用户无需预装 Python 或 Node.js。完整技术栈与架构规范请参阅 **`DESKTOP_SPEC.md`** 与 **`desktop/README.md`**。
 
 ---
 
@@ -37,7 +37,7 @@
 
 桌面端已收敛于 `desktop/` 专属目录，并以 Windows 原生 Edge WebView2 为当前核心官方架构：
 
-### 官方推荐：Windows 原生 Edge WebView2 极轻量单体架构 (`desktop/`)
+### Windows 原生 Edge WebView2 (`desktop/`)
 
 利用 Windows 10/11 内置的 Microsoft Edge WebView2 引擎与嵌入式 FastAPI 宿主，实现超低内存占用与即开即用体验：
 
@@ -45,31 +45,25 @@
    - 根目录下直接双击 **`启动桌面版.bat`**（或执行 `desktop\run.bat`）。
    - 自动检测并编译缺失资源，随后无缝拉起原生桌面视窗，冷启动常驻内存仅 **40MB~60MB**。
 2. **极速热更新开发 (`desktop/run_dev.bat`)**：
+   - 在项目根目录执行 `npm run dev`，或双击 `desktop/run_dev.bat`，统一启动 WebView2 开发壳。
    - 用于边改前端代码边看效果的场景。
    - 自动拉起 Vite HMR 开发服务器（端口 5173）并直连原生窗口，保存代码在 **30ms 内热替换生效**。
+   - Vite 与窗口统一使用 `127.0.0.1:5173`，通过 HTTP 检查后才打开窗口；启动失败时提示 `%LOCALAPPDATA%\InfiniteCanvasNote\logs\vite-dev.log` 日志路径。
 3. **极速增量编译与原地刷新 (`desktop/update.bat`)**：
    - 修改前端代码后双击 `desktop\update.bat`，3 秒内完成 Rollup 增量构建。
    - 桌面窗口无需重启，直接在窗口内按下 **`F5` 或 `Ctrl+R`** 即可就地刷新生效。
 4. **生命周期闭环**：
-   - 窗口关闭时自动注销后端服务，无后台残留僵尸进程，彻底杜绝 8002 端口冲突。
+   - 窗口关闭时清理本次创建的前端与后端服务；已存在并复用的服务继续由原启动器管理。
 
-### 历史备选方案（可选扩展）
+### Windows 发布包
 
-- **Tauri 2.0 原生架构 (`src-tauri/`)**：需本机安装 Rust/Cargo 与 C++ 工具链，执行 `npm run tauri:dev`。
-- **Electron NSIS 独立安装程序**：可通过 `build_desktop.ps1` 编译为完整的独立 NSIS 安装包。
+- **Drop-it 0.1 Windows 发布包**：执行 `build_desktop.ps1` 后生成 `release/Drop-it 0.1/` 免安装目录、`release/Drop-it-0.1-Portable.zip` 和 `release/Drop-it-Setup-0.1.exe`。开发机需要 7-Zip 和 NSIS（可通过 `PINBOARD_MAKENSIS` 指定编译器）。NSIS 安装版安装到当前用户的 `%LOCALAPPDATA%\Drop-it`，创建桌面与开始菜单快捷方式，卸载保留 `Files` 和用户数据。根目录 `打开免安装版.bat` 直接打开最新免安装目录，本机 Windows 快捷方式不提交 Git。发布壳使用系统 Edge WebView2，后端包含 FastAPI 服务和 OCR 运行库；发布内容只包含指定 Template，保存与暂存目录为空。
 
 ---
 
-## 4. 实时流畅度诊断与性能监控 (FPS & Performance HUD)
+## 4. 极简桌面窗口与调试界面
 
-在桌面端调试与使用过程中，界面内置了两级实时性能诊断工具：
-
-- **左上角实时帧率开关 (`FpsMeter.tsx`)**：
-  - 点击左上角 `FPS` 印刷风格滑块即可开启实时测速（如 `60 FPS`、`144 FPS`）；关闭时彻底销毁 rAF 循环，0 开销。
-- **右上角核心性能诊断仪表盘 (`PerformanceHUD.tsx`)**：
-  - 随帧率开关联动开启，常驻右上角；
-  - 实时监控三大核心指标：**单帧耗时 (FT)**、**Chromium/WebView2 堆内存 (Heap)** 与 **视口空间裁剪率 (Viewport Culling)**；
-  - 自动捕获 >50ms 的长任务阻塞（Long Tasks），点击展开详细诊断抽屉，助力排查大图缩放与撤销历史性能。
+桌面端使用无边框 WebView，隐藏系统标题栏。右上角保留透明线框的最小化、最大化/还原和关闭按钮；鼠标进入窗口顶部 40px 区域（与标题栏完整高度一致）时，自动显示 40px 高的标题栏，按住左键即可拖动窗口，双击可最大化/还原。鼠标离开后标题栏收起，拖动期间和窗口按钮键盘聚焦期间保持显示。画布左上角不显示 FPS、性能或设置按钮；性能组件保留在代码库中作为后续调试备用，不挂载到当前前端界面。
 
 ---
 
@@ -77,4 +71,3 @@
 
 - 桌面端与浏览器 Web 端共用后端 SQLite `pins` 表。
 - 启动时自动双向比对并同步 1~8 号图钉世界坐标与缩放比例，通过 `Ctrl+1~8` 可在桌面端无缝快速跳转，跨客户端永不丢失。
-

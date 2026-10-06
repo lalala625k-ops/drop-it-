@@ -1,8 +1,10 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
+import type { SetStateAction } from 'react';
 import { Viewport, Card, Group } from '../types';
 import { clamp, computeFitViewport, computeCardFocusViewport, MIN_CANVAS_ZOOM } from '../utils/canvas';
 
-const VIEWPORT_STORAGE_KEY = 'pinboard_viewport_v1';
+const boardId = new URLSearchParams(location.search).get('board-id');
+const VIEWPORT_STORAGE_KEY = `pinboard_viewport_v1${boardId ? `_${boardId}` : ''}`;
 
 export function getSavedViewport(): Viewport | null {
   try {
@@ -33,9 +35,46 @@ export function saveViewportToStorage(vp: Viewport) {
 }
 
 export function useViewport(options?: { invertWheelZoom?: boolean }) {
-  const [viewport, setViewport] = useState<Viewport>(() => getSavedViewport() || { x: 0, y: 0, zoom: 1.0 });
+  const [viewport, setViewportState] = useState<Viewport>(() => getSavedViewport() || { x: 0, y: 0, zoom: 1.0 });
   const viewportRef = useRef<Viewport>(viewport);
-  viewportRef.current = viewport;
+  const surfaceRef = useRef<HTMLDivElement>(null);
+  const culledViewportRef = useRef<Viewport>(viewport);
+  const wheelRafRef = useRef<number | null>(null);
+  const wheelIdleRef = useRef<number | null>(null);
+  const pendingWheelRef = useRef<{ factor: number; clientX: number; clientY: number } | null>(null);
+  const wheelActiveRef = useRef(false);
+  const wheelLodZoomRef = useRef(viewport.zoom);
+  const [isWheelZooming, setIsWheelZooming] = useState(false);
+
+  const applySurfaceTransform = useCallback((next: Viewport) => {
+    const surface = surfaceRef.current;
+    if (surface) surface.style.transform = `translate(${next.x}px, ${next.y}px) scale(${next.zoom})`;
+  }, []);
+
+  const commitViewport = useCallback((next: Viewport) => {
+    viewportRef.current = next;
+    culledViewportRef.current = next;
+    setViewportState(next);
+  }, []);
+
+  const setViewport = useCallback((update: SetStateAction<Viewport>) => {
+    if (wheelRafRef.current !== null) window.cancelAnimationFrame(wheelRafRef.current);
+    if (wheelIdleRef.current !== null) window.clearTimeout(wheelIdleRef.current);
+    wheelRafRef.current = null;
+    wheelIdleRef.current = null;
+    pendingWheelRef.current = null;
+    if (wheelActiveRef.current) {
+      wheelActiveRef.current = false;
+      setIsWheelZooming(false);
+    }
+    const next = typeof update === 'function' ? update(viewportRef.current) : update;
+    commitViewport(next);
+  }, [commitViewport]);
+
+  // A React commit may land while the wheel gesture has already advanced another frame.
+  useLayoutEffect(() => {
+    applySurfaceTransform(viewportRef.current);
+  }, [viewport, applySurfaceTransform]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -67,14 +106,61 @@ export function useViewport(options?: { invertWheelZoom?: boolean }) {
     return () => window.removeEventListener('mousemove', handleMouseMove);
   }, [handleMouseMove]);
 
-  const wheelRafRef = useRef<number | null>(null);
-  const pendingWheelRef = useRef<{ factor: number; clientX: number; clientY: number } | null>(null);
+  const applyPendingWheel = useCallback(() => {
+    wheelRafRef.current = null;
+    const pending = pendingWheelRef.current;
+    pendingWheelRef.current = null;
+    if (!pending) return;
+    const prev = viewportRef.current;
+    const nextZoom = clamp(prev.zoom * pending.factor, MIN_CANVAS_ZOOM, 3.0);
+    if (Math.abs(nextZoom - prev.zoom) < 0.0001) return;
+    const next = {
+      x: pending.clientX - (pending.clientX - prev.x) * (nextZoom / prev.zoom),
+      y: pending.clientY - (pending.clientY - prev.y) * (nextZoom / prev.zoom),
+      zoom: nextZoom,
+    };
+    viewportRef.current = next;
+    mouseScreenRef.current = { x: pending.clientX, y: pending.clientY };
+    mouseWorldRef.current = {
+      x: (pending.clientX - next.x) / next.zoom,
+      y: (pending.clientY - next.y) / next.zoom,
+    };
+    applySurfaceTransform(next);
+
+    const previous = culledViewportRef.current;
+    const bounds = (vp: Viewport, paddingPx: number) => ({
+      left: (-vp.x - paddingPx) / vp.zoom,
+      top: (-vp.y - paddingPx) / vp.zoom,
+      right: (window.innerWidth - vp.x + paddingPx) / vp.zoom,
+      bottom: (window.innerHeight - vp.y + paddingPx) / vp.zoom,
+    });
+    const covered = bounds(previous, 150);
+    const visible = bounds(next, 0);
+    const needsCulling = visible.left < covered.left || visible.top < covered.top ||
+      visible.right > covered.right || visible.bottom > covered.bottom;
+    if (needsCulling) commitViewport(next);
+    else if (document.querySelector('.far-canvas')) commitViewport(next);
+  }, [applySurfaceTransform, commitViewport]);
+
+  const flushWheelZoom = useCallback(() => {
+    if (wheelRafRef.current !== null) window.cancelAnimationFrame(wheelRafRef.current);
+    if (wheelIdleRef.current !== null) window.clearTimeout(wheelIdleRef.current);
+    wheelRafRef.current = null;
+    wheelIdleRef.current = null;
+    applyPendingWheel();
+    if (viewportRef.current !== culledViewportRef.current) commitViewport(viewportRef.current);
+    if (wheelActiveRef.current) {
+      wheelActiveRef.current = false;
+      setIsWheelZooming(false);
+    }
+  }, [applyPendingWheel, commitViewport]);
 
   useEffect(() => {
     return () => {
       if (wheelRafRef.current !== null) {
         window.cancelAnimationFrame(wheelRafRef.current);
       }
+      if (wheelIdleRef.current !== null) window.clearTimeout(wheelIdleRef.current);
     };
   }, []);
 
@@ -95,6 +181,11 @@ export function useViewport(options?: { invertWheelZoom?: boolean }) {
     }
 
     e.preventDefault();
+    if (!wheelActiveRef.current) {
+      wheelActiveRef.current = true;
+      wheelLodZoomRef.current = viewportRef.current.zoom;
+      setIsWheelZooming(true);
+    }
     const isZoomIn = options?.invertWheelZoom ? e.deltaY > 0 : e.deltaY < 0;
     const step = Math.min(Math.abs(e.deltaY) / 100, 1.5);
     const stepFactor = isZoomIn ? (1 + 0.12 * Math.max(0.6, step)) : (1 / (1 + 0.12 * Math.max(0.6, step)));
@@ -108,22 +199,13 @@ export function useViewport(options?: { invertWheelZoom?: boolean }) {
       pendingWheelRef.current.clientY = clientY;
     }
 
-    if (wheelRafRef.current === null) {
-      wheelRafRef.current = window.requestAnimationFrame(() => {
-        wheelRafRef.current = null;
-        if (!pendingWheelRef.current) return;
-        const { factor, clientX: cx, clientY: cy } = pendingWheelRef.current;
-        pendingWheelRef.current = null;
-        setViewport((prev) => {
-          const nextZoom = clamp(prev.zoom * factor, MIN_CANVAS_ZOOM, 3.0);
-          if (Math.abs(nextZoom - prev.zoom) < 0.0001) return prev;
-          const nextX = cx - (cx - prev.x) * (nextZoom / prev.zoom);
-          const nextY = cy - (cy - prev.y) * (nextZoom / prev.zoom);
-          return { x: nextX, y: nextY, zoom: nextZoom };
-        });
-      });
-    }
-  }, [options?.invertWheelZoom]);
+    if (wheelRafRef.current === null) wheelRafRef.current = window.requestAnimationFrame(applyPendingWheel);
+    if (wheelIdleRef.current !== null) window.clearTimeout(wheelIdleRef.current);
+    wheelIdleRef.current = window.setTimeout(() => {
+      wheelIdleRef.current = null;
+      flushWheelZoom();
+    }, 120);
+  }, [options?.invertWheelZoom, applyPendingWheel, flushWheelZoom]);
 
   // Double click card: smooth 80% focus toggle
   const handleCardDoubleClick = useCallback((card: Card) => {
@@ -136,7 +218,7 @@ export function useViewport(options?: { invertWheelZoom?: boolean }) {
       focusedCardIdRef.current = card.id;
       setViewport(computeCardFocusViewport(card, window.innerWidth, window.innerHeight));
     }
-  }, []);
+  }, [setViewport]);
 
   // Double click blank canvas: fit all cards & groups
   const handleCanvasDoubleClick = useCallback((cards: Card[], groups: Group[]) => {
@@ -146,15 +228,19 @@ export function useViewport(options?: { invertWheelZoom?: boolean }) {
       previousViewportRef.current = null;
       focusedCardIdRef.current = null;
     }
-  }, []);
+  }, [setViewport]);
 
   return {
     viewport,
     setViewport,
     viewportRef,
+    surfaceRef,
     mouseScreenRef,
     mouseWorldRef,
     handleWheel,
+    flushWheelZoom,
+    isWheelZooming,
+    wheelLodZoom: wheelLodZoomRef.current,
     handleCardDoubleClick,
     handleCanvasDoubleClick,
   };

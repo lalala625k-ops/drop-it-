@@ -1,6 +1,20 @@
-"""Vision prompts adapted from the reference reverse-image project."""
+"""Vision prompts for reverse-image resolution."""
+
+OUTER_PAGE_RULE = (
+    '【截图外层页面优先 / Outer page takes precedence】：识别截图所属平台时，以最外层页面的标题区、'
+    '作者/公众号信息区、发布时间和页面固定底栏为准。文章正文嵌入的微博、小红书、聊天或其他截图'
+    '属于被引用内容，其平台图标、昵称、标题、点赞评论和转发按钮不能替代外层页面的平台、标题和作者。'
+    '微信公众号文章不一定有「原创」标签或微信绿标：顶部大标题，下面灰色作者、蓝色公众号名、'
+    '年月日及具体时分和属地，底部再次显示公众号名及赞/分享/爱心/留言图标，是微信公众号页面布局。'
+    '即使底栏只有图标数字，没有「写留言」「在看」文字，也应判为 wechat，site_domain 为 mp.weixin.qq.com。'
+    '提取外层文章完整标题，author 优先填公众号名，而非顶部个人署名或正文内嵌截图的博主。'
+    'Determine the hosting OUTER page first; embedded social screenshots are quoted material, not the host. '
+    'WeChat articles may lack the original-content badge and WeChat logo. Use the outer headline, account/date/time/location '
+    'row and repeated account in the bottom action bar; return wechat and mp.weixin.qq.com for that layout.\n'
+)
 
 OPENAI_PROMPT = (
+    OUTER_PAGE_RULE +
     '你是一个极其敏锐的全网社交媒体、视频平台与通用网站截图识别引擎。\n'
     '请仔细观察截图的UI组件、排版布局、图标和文字风格，第一步精确判定截图来自哪个平台/网站，第二步提取正文核心标题与作者：\n'
     '\n'
@@ -84,5 +98,6 @@ OPENAI_PROMPT = (
 )
 
 GEMINI_PROMPT = (
+    OUTER_PAGE_RULE +
     "You are an expert social media and web screenshot analyzer. Analyze this screenshot from Bilibili, Twitter/X, Instagram/IG, Xiaohongshu, Weibo, YouTube, Feishu/Lark, or third-party / niche website. Instagram clues include its gradient camera logo, Stories circles, Reels label, an @account above a post, and heart/comment/share/save controls. For Instagram set platform to instagram and site_domain to instagram.com; use the posting account as author. Only fill title if a separate title is visibly present; ordinary Instagram posts have no separate title, so leave it empty. Program code will select visible OCR caption text for searching. Ignore unrelated recommendations and advertisements. On YouTube, an ad may be playing INSIDE the main video player. The ad is not the original video. Treat 'Ad', 'Sponsored', 'Skip Ads', countdowns, advertiser URLs, install/shop buttons, brands, and subtitles inside that player as advertising evidence, not as the video's title, channel, distinctive_text, or search_query. Read the original video title and channel from the YouTube page UI OUTSIDE the player, preferably beneath it. Do not use recommendations or comments as a substitute. If the original title is not visible or otherwise unambiguous, return empty strings for title and search_query; only return author if the original channel is clear. Do not guess. You may still set platform to youtube and site_domain to youtube.com. For other sites, identify the primary article or post and ignore ads. For third-party/niche sites, extract distinctive keywords and breadcrumb. Extract: 1. 'platform': 'wechat' | 'zhihu' | 'juejin' | 'csdn' | 'sspai' | 'feishu' | 'bilibili' | 'twitter' | 'instagram' | 'xiaohongshu' | 'weibo' | 'youtube' | 'niche_site' | 'general' 2. 'platform_name': display name 3. 'site_domain': site domain 4. 'title': separate title or empty 5. 'breadcrumb': breadcrumb or category 6. 'distinctive_text': unique phrase belonging to the original content, never an ad 7. 'language': 'en' | 'zh' 8. 'author': original publisher/channel or empty 9. 'id': only an explicitly visible content ID, otherwise empty 10. 'search_query': precise query for the original content or empty if its title cannot be confirmed. Respond ONLY with a valid JSON object."
 )

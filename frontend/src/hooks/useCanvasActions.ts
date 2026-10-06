@@ -1,5 +1,5 @@
 import { useCallback, MutableRefObject } from 'react';
-import { Card, Group } from '../types';
+import { CanvasPin, Card, Group, HistoryState } from '../types';
 import { saveStateDebounced } from '../utils/storage';
 import { getParentLinkage, normalizeTreeData } from '../utils/groupRelations';
 import { autoPackCards } from '../utils/packing';
@@ -17,11 +17,14 @@ interface UseCanvasActionsProps {
   selectedCardIdsRef: MutableRefObject<Set<string>>;
   setSelectedCardIds: (ids: Set<string>) => void;
   selectedGroupIdsRef: MutableRefObject<Set<string>>;
+  pinsRef: MutableRefObject<CanvasPin[]>;
+  selectedPinIdsRef: MutableRefObject<Set<string>>;
+  replacePins: (pins: CanvasPin[]) => void;
   setSelectedGroupIds: (ids: Set<string> | ((prev: Set<string>) => Set<string>)) => void;
   maxZIndexRef: MutableRefObject<number>;
   mouseWorldRef: MutableRefObject<{ x: number; y: number }>;
   pushHistory: (cards: Card[], groups: Group[]) => void;
-  undo: () => { cards: Card[]; groups: Group[] } | null;
+  undo: () => HistoryState | null;
   clearSelection: () => void;
   refreshGroupBounds: (cards: Card[], groups: Group[]) => Group[];
   createParentWithCollisionAvoidance: (targetWorld: { x: number; y: number }, cards: Card[], existingGroups: Group[]) => Group;
@@ -37,6 +40,9 @@ export function useCanvasActions({
   selectedCardIdsRef,
   setSelectedCardIds,
   selectedGroupIdsRef,
+  pinsRef,
+  selectedPinIdsRef,
+  replacePins,
   setSelectedGroupIds,
   maxZIndexRef,
   mouseWorldRef,
@@ -153,14 +159,17 @@ export function useCanvasActions({
       const tree = normalizeTreeData(prev.cards, prev.groups);
       setCards(tree.cards);
       setGroups(tree.groups);
+      if (prev.pins) replacePins(prev.pins);
       saveStateDebounced(tree.cards, tree.groups);
+      clearSelection();
     }
-  }, [setCards, setGroups, undo]);
+  }, [setCards, setGroups, undo, replacePins, clearSelection]);
 
   const handleDeleteSelected = useCallback(() => {
     const cardIds = selectedCardIdsRef.current;
     const groupIds = selectedGroupIdsRef.current;
-    if (cardIds.size === 0 && groupIds.size === 0) return;
+    const pinIds = selectedPinIdsRef.current;
+    if (cardIds.size === 0 && groupIds.size === 0 && pinIds.size === 0) return;
 
     pushHistory(cardsRef.current, groupsRef.current);
     const parentIds = new Set(groupsRef.current.filter((g) => g.kind !== 'bundle' && groupIds.has(g.id)).map((g) => g.id));
@@ -177,8 +186,10 @@ export function useCanvasActions({
     nextGroups = nextGroups.map((group) => group.parentIds?.some((id) => !survivingIds.has(id))
       ? { ...group, parentIds: group.parentIds.filter((id) => survivingIds.has(id)).slice(0, 1) } : group);
     commitState(nextCards, refreshGroupBounds(nextCards, nextGroups));
+    if (pinIds.size) replacePins(pinsRef.current.filter((pin) => !pinIds.has(pin.id)));
     clearSelection();
-  }, [cardsRef, clearSelection, commitState, groupsRef, pushHistory, refreshGroupBounds, selectedCardIdsRef, selectedGroupIdsRef]);
+  }, [cardsRef, clearSelection, commitState, groupsRef, pushHistory, refreshGroupBounds, selectedCardIdsRef, selectedGroupIdsRef,
+    pinsRef, selectedPinIdsRef, replacePins]);
 
   const handleCreateNewParentAtCursor = useCallback(() => {
     pushHistory(cardsRef.current, groupsRef.current);

@@ -1,6 +1,7 @@
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+from backend.services.atomic_files import locked_workspace
 from backend.services.storage import (
     load_data_from_disk, get_revision as read_revision, apply_changes, replace_all, RevisionConflict,
     get_pins_from_disk, save_pins_to_disk
@@ -70,7 +71,8 @@ async def get_cards():
     return load_data_from_disk()
 
 @router.post("")
-async def save_cards(payload: PersistencePayload):
+@locked_workspace
+def save_cards(payload: PersistencePayload):
     data = {
         "cards": [card.model_dump() for card in payload.cards],
         "groups": [group.model_dump() for group in (payload.groups or [])],
@@ -82,7 +84,8 @@ async def save_cards(payload: PersistencePayload):
     return {"success": True, "count": len(payload.cards), "revision": revision}
 
 @router.post("/changes")
-async def save_changes(payload: ChangesPayload):
+@locked_workspace
+def save_changes(payload: ChangesPayload):
     try:
         revision = apply_changes(
             payload.baseRevision,
@@ -103,6 +106,7 @@ async def get_pins():
     return {"pins": get_pins_from_disk()}
 
 @router.post("/pins")
-async def save_pins(payload: List[dict]):
+@locked_workspace
+def save_pins(payload: List[dict]):
     save_pins_to_disk(payload)
     return {"success": True, "count": len(payload)}

@@ -1,4 +1,4 @@
-import React, { useState, useRef, memo } from 'react';
+import React, { useState, useRef, useCallback, memo } from 'react';
 import { Card } from '../types';
 import { FloatingHeaderTitle } from './card/FloatingHeaderTitle';
 import { CardResizeHandles, ResizeHandleDirection } from './card/CardResizeHandles';
@@ -9,17 +9,12 @@ import { getThumbnailUrl } from '../utils/thumbnail';
 
 export type { ResizeHandleDirection };
 
-export interface TourCardHint {
-  label: string;
-  bounce?: boolean;
-}
-
 interface CardComponentProps {
   card: Card;
   isSelected: boolean;
+  isDragging?: boolean;
   showSelectionControls: boolean;
   parentHighlighted?: boolean;
-  tourHint?: TourCardHint;
   onSelect: (e: React.MouseEvent) => void;
   onUpdate: (id: string, updates: Partial<Card>) => void;
   onTextEdit: (id: string, updates: Partial<Card>) => void;
@@ -28,15 +23,18 @@ interface CardComponentProps {
   onStartScale: (card: Card, startClientX: number, startWidth: number, startHeight: number) => void;
   onStartResize: (card: Card, handle: ResizeHandleDirection, e: React.MouseEvent) => void;
   isTinyThumbnail?: boolean;
+  useCanvasImage?: boolean;
+  highQualityImage?: boolean;
+  crispRender?: boolean;
   contentScale: number;
 }
 
 const CardComponentInner: React.FC<CardComponentProps> = ({
   card,
   isSelected,
+  isDragging = false,
   showSelectionControls,
   parentHighlighted = false,
-  tourHint,
   onSelect,
   onUpdate,
   onTextEdit,
@@ -45,10 +43,14 @@ const CardComponentInner: React.FC<CardComponentProps> = ({
   onStartScale,
   onStartResize,
   isTinyThumbnail = false,
+  useCanvasImage = false,
+  highQualityImage = false,
+  crispRender = false,
   contentScale,
 }) => {
   const [hoverTimeout, setHoverTimeout] = useState<number | null>(null);
   const [showTooltip, setShowTooltip] = useState(false);
+  const [editingTextSize, setEditingTextSize] = useState<{ width: number; height: number } | null>(null);
   const pointerDownPosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const wasSelectedAtPointerDownRef = useRef(false);
 
@@ -92,16 +94,16 @@ const CardComponentInner: React.FC<CardComponentProps> = ({
     setShowTooltip(false);
   };
 
-  const handleWebLinkClick = (e: React.MouseEvent) => {
+  const handleWebLinkClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     // Only open website when the card was already selected before pointer down
     if (!wasSelectedAtPointerDownRef.current || !isSelected) return;
     if (card.url) {
       window.open(card.url, '_blank', 'noopener,noreferrer');
     }
-  };
+  }, [isSelected, card.url]);
 
-  const isTourBouncing = !!tourHint?.bounce;
+  const displayCard = editingTextSize ? { ...card, ...editingTextSize } : card;
 
   return (
     <div
@@ -109,17 +111,15 @@ const CardComponentInner: React.FC<CardComponentProps> = ({
       data-selected={isSelected ? 'true' : 'false'}
       title={isTinyThumbnail ? card.headerTitle || card.title || card.content?.slice(0, 80) || '便签缩略图' : undefined}
       className={`absolute rounded-none select-none group bg-paper text-ink transition-colors ${
-        isTourBouncing ? 'animate-tour-bounce' : ''
-      } ${
         showSelectionControls ? 'border-2 border-ink z-30' : 'border border-ink hover:border-2'
       }`}
-      style={{
-        '--tour-x': `${card.x}px`,
-        '--tour-y': `${card.y}px`,
-        transform: isTourBouncing ? undefined : `translate(${card.x}px, ${card.y}px)`,
-        width: `${card.width}px`,
-        height: `${card.height}px`,
+        style={{
+        transform: `translate(${card.x}px, ${card.y}px)`,
+        willChange: isDragging ? 'transform' : undefined,
+        width: `${displayCard.width}px`,
+        height: `${displayCard.height}px`,
         zIndex: card.zIndex,
+        backgroundColor: useCanvasImage ? 'transparent' : undefined,
         outline: parentHighlighted ? '3px solid #1d1d1d' : undefined,
         outlineOffset: parentHighlighted ? '2px' : undefined,
       } as React.CSSProperties}
@@ -135,43 +135,36 @@ const CardComponentInner: React.FC<CardComponentProps> = ({
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
-      {/* Tour Hint Tooltip Badge */}
-      {tourHint && (
-        <div className="absolute -top-7 left-1/2 -translate-x-1/2 z-50 pointer-events-none flex flex-col items-center">
-          <div className="px-2 py-0.5 bg-ink text-paper text-[11px] font-bold tracking-wide border border-paper/40 shadow-sm whitespace-nowrap flex items-center gap-1 rounded-sm">
-            <span>{tourHint.label}</span>
-            <span className="text-[10px] opacity-80">↓</span>
-          </div>
-          <div className="w-0 h-0 border-x-4 border-x-transparent border-t-4 border-t-ink" />
-        </div>
-      )}
       {isTinyThumbnail ? (
-        <div className="h-full w-full overflow-hidden bg-paper pointer-events-none">
-          {card.image && card.type !== 'text' && !isFeishuUrl(card.url) ? (
+        <div className={`h-full w-full overflow-hidden ${useCanvasImage ? 'bg-transparent' : 'bg-paper'} pointer-events-none`}>
+          {card.image && card.type !== 'text' && !isFeishuUrl(card.url) && !useCanvasImage ? (
             <img
-              src={getThumbnailUrl(card.image, card.thumbnail) || card.image}
+              src={(highQualityImage ? card.image : getThumbnailUrl(card.image, card.thumbnail)) || card.image}
               alt=""
               className="h-full w-full object-cover"
               referrerPolicy="no-referrer"
               draggable={false}
-              loading="lazy"
+              loading={crispRender ? 'eager' : 'lazy'}
               decoding="async"
+              fetchPriority={crispRender ? 'high' : 'auto'}
             />
-          ) : (
+          ) : !useCanvasImage ? (
             <div className="flex h-full w-full flex-col justify-center gap-[2px] p-[2px]">
               <span className="h-[2px] w-3/4 bg-ink" />
               <span className="h-[2px] w-full bg-ink/50" />
               <span className="h-[2px] w-2/3 bg-ink/50" />
             </div>
-          )}
+          ) : null}
         </div>
       ) : (
         <div className="absolute left-0 top-0"
-          style={{ width: card.width / contentScale, height: card.height / contentScale,
+          style={{ width: displayCard.width / contentScale, height: displayCard.height / contentScale,
             transform: `scale(${contentScale})`, transformOrigin: 'top left' }}>
           <FloatingHeaderTitle card={card} contentScale={contentScale} isSelected={isSelected} onSelect={onSelect} onUpdate={onUpdate} />
-          <CardBodyContent card={card} isSelected={isSelected} onUpdate={onUpdate}
+          <CardBodyContent card={displayCard} isSelected={isSelected} canvasImage={useCanvasImage}
+            highQualityImage={highQualityImage} crispRender={crispRender} onUpdate={onUpdate}
             onTextEdit={onTextEdit} onTextEditStart={onTextEditStart}
+            onTextEditingSize={setEditingTextSize}
             onWebLinkClick={handleWebLinkClick} contentScale={contentScale} />
           {card.isParsing && (card.type === 'web' || card.type === 'image') && (
             <div role="status" aria-live="polite"
@@ -207,9 +200,11 @@ const CardComponentInner: React.FC<CardComponentProps> = ({
 export const CardComponent = memo(CardComponentInner, (previous, next) =>
   previous.card === next.card &&
   previous.isSelected === next.isSelected &&
+  previous.isDragging === next.isDragging &&
   previous.showSelectionControls === next.showSelectionControls &&
   previous.parentHighlighted === next.parentHighlighted &&
   previous.contentScale === next.contentScale &&
-  previous.tourHint?.label === next.tourHint?.label &&
-  previous.tourHint?.bounce === next.tourHint?.bounce &&
-  previous.isTinyThumbnail === next.isTinyThumbnail);
+  previous.isTinyThumbnail === next.isTinyThumbnail &&
+  previous.useCanvasImage === next.useCanvasImage &&
+  previous.highQualityImage === next.highQualityImage &&
+  previous.crispRender === next.crispRender);

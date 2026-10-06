@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { memo, useState, useRef, useEffect } from 'react';
 import { Card } from '../../types';
 import { isFeishuUrl } from '../../utils/feishu';
 import { SiteLogo } from '../SiteLogo';
@@ -13,17 +13,25 @@ interface CardBodyContentProps {
   onUpdate: (id: string, updates: Partial<Card>) => void;
   onTextEdit: (id: string, updates: Partial<Card>) => void;
   onTextEditStart: () => void;
+  onTextEditingSize?: (size: { width: number; height: number } | null) => void;
   onWebLinkClick: (e: React.MouseEvent) => void;
+  canvasImage?: boolean;
+  highQualityImage?: boolean;
+  crispRender?: boolean;
   contentScale: number;
 }
 
-export const CardBodyContent: React.FC<CardBodyContentProps> = ({
+const CardBodyContentInner: React.FC<CardBodyContentProps> = ({
   card,
   isSelected,
   onUpdate,
   onTextEdit,
   onTextEditStart,
+  onTextEditingSize,
   onWebLinkClick,
+  canvasImage = false,
+  highQualityImage = false,
+  crispRender = false,
   contentScale,
 }) => {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -35,7 +43,9 @@ export const CardBodyContent: React.FC<CardBodyContentProps> = ({
   const isFeishu = card.type === 'web' && isFeishuUrl(card.url);
 
   const thumbSrc = getThumbnailUrl(card.image, card.thumbnail);
-  const effectiveImageSrc = (!thumbFailed && thumbSrc) ? thumbSrc : card.image;
+  const effectiveImageSrc = highQualityImage && card.image
+    ? card.image
+    : (!thumbFailed && thumbSrc) ? thumbSrc : card.image;
 
   const handleImageError = () => {
     if (!thumbFailed && thumbSrc && thumbSrc !== card.image) {
@@ -50,6 +60,42 @@ export const CardBodyContent: React.FC<CardBodyContentProps> = ({
   const footerRef = useRef<HTMLDivElement>(null);
   const adjustedKeyRef = useRef<string | null>(null);
   const textInputRef = useRef<HTMLTextAreaElement>(null);
+  const wasSelectedRef = useRef(isSelected);
+  const textPointerRef = useRef<{ x: number; y: number; dragged: boolean } | null>(null);
+  const suppressTextClickRef = useRef(false);
+
+  // Canvas dragging is handled by a window-level pointer state machine. Keep
+  // a small local movement guard as well so the click fired after mouseup
+  // cannot turn a drag of a selected text card into edit mode.
+  useEffect(() => {
+    const handlePointerMove = (event: MouseEvent) => {
+      const pointer = textPointerRef.current;
+      if (!pointer || pointer.dragged) return;
+      pointer.dragged = Math.hypot(event.clientX - pointer.x, event.clientY - pointer.y) > 3;
+    };
+    const handlePointerUp = () => {
+      const pointer = textPointerRef.current;
+      if (!pointer) return;
+      suppressTextClickRef.current = pointer.dragged;
+      textPointerRef.current = null;
+    };
+    window.addEventListener('mousemove', handlePointerMove);
+    window.addEventListener('mouseup', handlePointerUp);
+    return () => {
+      window.removeEventListener('mousemove', handlePointerMove);
+      window.removeEventListener('mouseup', handlePointerUp);
+    };
+  }, []);
+
+  const startTextEditing = () => {
+    if (card.type !== 'text') return;
+    setIsEditingText(true);
+    const size = textCardSize(card.content || '');
+    onTextEditingSize?.({
+      width: Math.max(card.width, size.width * contentScale),
+      height: Math.max(card.height, (size.height + (card.tags?.length ? 32 : 0)) * contentScale),
+    });
+  };
 
   const handleTextChange = (content: string) => {
     if (card.type !== 'text') {
@@ -87,12 +133,15 @@ export const CardBodyContent: React.FC<CardBodyContentProps> = ({
   useEffect(() => {
     if (!isSelected) {
       setIsEditingText(false);
+      onTextEditingSize?.(null);
       if (textInputRef.current) {
         if (document.activeElement === textInputRef.current) textInputRef.current.blur();
         clearTextSelection(textInputRef.current);
         setTextEditorEpoch((epoch) => epoch + 1);
       }
+      if (wasSelectedRef.current) window.getSelection()?.removeAllRanges();
     }
+    wasSelectedRef.current = isSelected;
   }, [isSelected]);
 
   useEffect(() => {
@@ -252,7 +301,7 @@ export const CardBodyContent: React.FC<CardBodyContentProps> = ({
   switch (card.type) {
     case 'image':
       return (
-        <div className="w-full h-full flex flex-col overflow-hidden relative rounded-none bg-paper text-ink">
+        <div className={`w-full h-full flex flex-col overflow-hidden relative rounded-none ${canvasImage ? 'bg-transparent' : 'bg-paper'} text-ink`}>
           {card.title && (
             <div
               ref={titleRef}
@@ -262,18 +311,21 @@ export const CardBodyContent: React.FC<CardBodyContentProps> = ({
               {card.title}
             </div>
           )}
-          <div className="flex-1 flex items-center justify-center overflow-hidden relative min-h-0 bg-paper">
-            <img
-              src={effectiveImageSrc}
-              alt={card.title || 'Image'}
-              className="w-full h-full object-cover pointer-events-none"
-              referrerPolicy="no-referrer"
-              draggable={false}
-              loading="lazy"
-              decoding="async"
-              onLoad={handleImageLoad}
-              onError={handleImageError}
-            />
+          <div className={`flex-1 flex items-center justify-center overflow-hidden relative min-h-0 ${canvasImage ? 'bg-transparent' : 'bg-paper'}`}>
+            {!canvasImage && (
+              <img
+                src={effectiveImageSrc}
+                alt={card.title || 'Image'}
+                className="w-full h-full object-cover pointer-events-none"
+                referrerPolicy="no-referrer"
+                draggable={false}
+                loading={crispRender ? 'eager' : 'lazy'}
+                decoding="async"
+                fetchPriority={crispRender ? 'high' : 'auto'}
+                onLoad={handleImageLoad}
+                onError={handleImageError}
+              />
+            )}
             {card.tags && card.tags.length > 0 && (
               <div className="absolute bottom-2 left-2 flex flex-wrap gap-1 z-10 pointer-events-none">
                 {card.tags.map((t) => (
@@ -300,8 +352,9 @@ export const CardBodyContent: React.FC<CardBodyContentProps> = ({
                     alt={card.title || 'Web preview'}
                     className="w-full h-full object-cover pointer-events-none"
                     referrerPolicy="no-referrer"
-                    loading="lazy"
+                    loading={crispRender ? 'eager' : 'lazy'}
                     decoding="async"
+                    fetchPriority={crispRender ? 'high' : 'auto'}
                     onLoad={handleImageLoad}
                     onError={handleImageError}
                     draggable={false}
@@ -330,9 +383,18 @@ export const CardBodyContent: React.FC<CardBodyContentProps> = ({
           <div
             className={`flex-1 p-3.5 flex flex-col overflow-hidden bg-paper ${isSelected ? 'pointer-events-auto' : 'pointer-events-none select-none'}`}
             style={{ backgroundColor: card.color || undefined }}
+            onMouseDown={(event) => {
+              if (event.button === 0 && isSelected) {
+                textPointerRef.current = { x: event.clientX, y: event.clientY, dragged: false };
+              }
+            }}
             onClick={() => {
+              if (suppressTextClickRef.current) {
+                suppressTextClickRef.current = false;
+                return;
+              }
               if (isSelected && !isEditingText) {
-                setIsEditingText(true);
+                startTextEditing();
               }
             }}
           >
@@ -351,6 +413,7 @@ export const CardBodyContent: React.FC<CardBodyContentProps> = ({
                   clearTextSelection(event.target);
                   finishTextEdit(event.target.value);
                   setIsEditingText(false);
+                  onTextEditingSize?.(null);
                   setTextEditorEpoch((epoch) => epoch + 1);
                 }}
                 onMouseDown={(event) => { if (isSelected && !event.ctrlKey && !event.metaKey) event.stopPropagation(); }}
@@ -362,15 +425,15 @@ export const CardBodyContent: React.FC<CardBodyContentProps> = ({
                     textInputRef.current?.blur();
                   }
                 }}
-                className="w-full h-full bg-transparent text-ink text-[15px] leading-[1.40] font-retina font-normal text-left resize-none border-0 outline-none p-0 m-0 placeholder:text-ink/40 placeholder:italic overflow-auto select-text cursor-text"
+                className="w-full h-full bg-transparent text-ink text-[15px] leading-[1.40] font-retina font-normal text-left resize-none border-0 outline-none p-0 m-0 placeholder:text-ink/40 placeholder:italic overflow-hidden select-text cursor-text"
                 style={{ overflowWrap: 'anywhere', color: card.textColor || undefined }}
               />
             ) : (
               <div
-                className="w-full h-full cursor-text overflow-auto"
+                className="w-full h-full cursor-text overflow-hidden"
                 onDoubleClick={(e) => {
                   e.stopPropagation();
-                  setIsEditingText(true);
+                  startTextEditing();
                 }}
               >
                 {card.content ? (
@@ -408,3 +471,26 @@ export const CardBodyContent: React.FC<CardBodyContentProps> = ({
       );
   }
 };
+
+const positionFields = new Set<keyof Card>(['x', 'y', 'zIndex']);
+function sameBodyCard(previous: Card, next: Card) {
+  if (previous === next) return true;
+  const keys = new Set<keyof Card>([
+    ...Object.keys(previous) as (keyof Card)[],
+    ...Object.keys(next) as (keyof Card)[],
+  ]);
+  for (const key of keys) {
+    if (!positionFields.has(key) && previous[key] !== next[key]) return false;
+  }
+  return true;
+}
+
+// Position belongs to the outer wrapper. Moving an image should reuse the
+// existing image/body DOM instead of reconciling its contents every frame.
+export const CardBodyContent = memo(CardBodyContentInner, (previous, next) =>
+  sameBodyCard(previous.card, next.card) &&
+  previous.isSelected === next.isSelected && previous.canvasImage === next.canvasImage &&
+  previous.highQualityImage === next.highQualityImage && previous.crispRender === next.crispRender &&
+  previous.contentScale === next.contentScale && previous.onUpdate === next.onUpdate &&
+  previous.onTextEdit === next.onTextEdit && previous.onTextEditStart === next.onTextEditStart &&
+  previous.onTextEditingSize === next.onTextEditingSize && previous.onWebLinkClick === next.onWebLinkClick);

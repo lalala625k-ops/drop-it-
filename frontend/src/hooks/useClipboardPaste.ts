@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import { Card } from '../types';
-import { CanvasClipboardSnapshot } from '../utils/canvasClipboard';
+import { CanvasClipboardSnapshot, normalizeClipboardText } from '../utils/canvasClipboard';
+import { CANVAS_CLIPBOARD_MIME, hasCanvasClipboardPayload, readClipboardSnapshot } from '../utils/canvasClipboardTransport';
 import { ingestScreenshot } from '../utils/ingestScreenshot';
 import { isFeishuUrl, FEISHU_LOGO_URLS } from '../utils/feishu';
 
@@ -10,6 +11,7 @@ interface UseClipboardPasteProps {
   showToast?: (msg: string) => void;
   stageCopiedObjects?: (snapshot: CanvasClipboardSnapshot) => void;
   getCopiedObjects?: () => CanvasClipboardSnapshot;
+  hasCanvasMultiSelection?: boolean;
   getWorldPosition: () => { x: number; y: number };
   getCardById: (id: string) => Card | undefined;
 }
@@ -20,27 +22,22 @@ export function useClipboardPaste({
   showToast,
   stageCopiedObjects,
   getCopiedObjects,
+  hasCanvasMultiSelection,
   getWorldPosition,
   getCardById,
 }: UseClipboardPasteProps) {
   const handleDataTransfer = useCallback(
     async (clipboardData: DataTransfer) => {
-      const rawText = (clipboardData.getData('text/plain') || clipboardData.getData('text/uri-list'))?.trim();
-      const internalObjects = getCopiedObjects?.();
-      const lastText = sessionStorage.getItem('canvas_clipboard_text');
-
-      // 0. Check if user is pasting an internally copied canvas card/group
-      if (internalObjects && (internalObjects.cards.length > 0 || internalObjects.groups.length > 0)) {
-        // Matches if clipboard text matches what we copied internally or is internal JSON
-        if (
-          (lastText && rawText === lastText) ||
-          (rawText && (rawText.startsWith('{"__type":"infinite-canvas') || rawText.includes('"infinite-canvas-objects"'))) ||
-          (!rawText && clipboardData.items.length === 0)
-        ) {
-          stageCopiedObjects?.(internalObjects);
-          return;
-        }
+      const snapshot = readClipboardSnapshot(clipboardData);
+      if (snapshot && stageCopiedObjects) {
+        stageCopiedObjects(snapshot);
+        return;
       }
+      if (!snapshot && hasCanvasClipboardPayload(clipboardData)) {
+        showToast?.('便签数据读取失败，请重新复制');
+        return;
+      }
+      const rawText = normalizeClipboardText(clipboardData.getData('text/plain') || clipboardData.getData('text/uri-list'));
 
       const items = Array.from(clipboardData.items);
       const imageItem = items.find((item) => item.type.startsWith('image/'));
@@ -245,52 +242,38 @@ export function useClipboardPaste({
       };
       await performPaste();
     },
-    [createCardAtCursor, updateCard, stageCopiedObjects, getCopiedObjects,
+    [createCardAtCursor, updateCard, stageCopiedObjects,
       getWorldPosition, getCardById, showToast]
   );
 
   const handlePaste = useCallback((event: ClipboardEvent) => {
+    if (document.querySelector('[data-modal="settings"]')) return;
     const activeTag = document.activeElement?.tagName.toLowerCase();
-    if (activeTag === 'input' || activeTag === 'textarea') {
+    if (activeTag === 'input' || activeTag === 'textarea' || (document.activeElement as HTMLElement)?.isContentEditable) {
       const hasImage = Array.from(event.clipboardData?.items || []).some((item) => item.type.startsWith('image/'));
-      if (!hasImage) return;
+      const canvasEditorFocused = !!(document.activeElement as HTMLElement | null)?.closest?.('[data-card-id]');
+      const hasObjects = !!event.clipboardData && hasCanvasClipboardPayload(event.clipboardData);
+      if (!hasImage && !(canvasEditorFocused && (hasCanvasMultiSelection || hasObjects))) return;
     }
     event.preventDefault();
     if (event.clipboardData) void handleDataTransfer(event.clipboardData);
-  }, [handleDataTransfer]);
+  }, [handleDataTransfer, hasCanvasMultiSelection]);
 
   const pasteFromSystemClipboard = useCallback(async () => {
     if (navigator.clipboard?.read) {
       try {
         const items = await navigator.clipboard.read();
+        const data = new DataTransfer();
         for (const item of items) {
-          const imageType = item.types.find((t) => t.startsWith('image/'));
-          if (imageType) {
-            const internalObjects = getCopiedObjects?.();
-            const lastText = sessionStorage.getItem('canvas_clipboard_text');
-            let itemText = '';
-            if (item.types.includes('text/plain')) {
-              try {
-                const textBlob = await item.getType('text/plain');
-                itemText = (await textBlob.text()).trim();
-              } catch { /* ignore */ }
-            }
-            if (internalObjects?.cards.length && lastText && itemText === lastText) {
-              stageCopiedObjects?.(internalObjects);
-              return;
-            }
-            const blob = await item.getType(imageType);
-            const file = new File([blob], 'pasted-image.png', { type: blob.type || 'image/png' });
-            await ingestScreenshot(file, {
-              createCard: createCardAtCursor,
-              updateCard,
-              getCard: getCardById,
-              showToast: (msg) => showToast?.(msg),
-              position: { ...getWorldPosition() },
-            });
-            return;
+          for (const type of item.types) {
+            if (!['text/plain', 'text/html', CANVAS_CLIPBOARD_MIME].includes(type) && !type.startsWith('image/')) continue;
+            const blob = await item.getType(type);
+            if (type.startsWith('image/')) data.items.add(new File([blob], 'pasted-image', { type: blob.type || type }));
+            else data.setData(type, await blob.text());
           }
         }
+        await handleDataTransfer(data);
+        return;
       } catch {
         // Permissions or clipboard.read unsupported, continue
       }
@@ -299,29 +282,22 @@ export function useClipboardPaste({
     if (navigator.clipboard?.readText) {
       try {
         const text = (await navigator.clipboard.readText())?.trim();
-        const internalObjects = getCopiedObjects?.();
-        const lastText = sessionStorage.getItem('canvas_clipboard_text');
-        if (internalObjects?.cards.length && (!text || (lastText && text === lastText))) {
-          stageCopiedObjects?.(internalObjects);
-          return;
-        }
         if (text) {
           const dt = new DataTransfer();
           dt.setData('text/plain', text);
           await handleDataTransfer(dt);
-          return;
         }
+        return;
       } catch {
         // fallback
       }
     }
 
     const fallbackObjects = getCopiedObjects?.();
-    if (fallbackObjects && (fallbackObjects.cards.length || fallbackObjects.groups.length)) {
+    if (fallbackObjects && (fallbackObjects.cards.length || fallbackObjects.groups.length || fallbackObjects.pins?.length)) {
       stageCopiedObjects?.(fallbackObjects);
     }
-  }, [getCopiedObjects, createCardAtCursor, updateCard, getCardById, showToast, getWorldPosition, stageCopiedObjects, handleDataTransfer]);
+  }, [getCopiedObjects, stageCopiedObjects, handleDataTransfer]);
 
   return { handlePaste, handleDroppedData: handleDataTransfer, pasteFromSystemClipboard };
 }
-

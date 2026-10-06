@@ -26,7 +26,7 @@ def search_target(clues: dict[str, str]) -> tuple[str, str] | None:
     platform = clues.get("platform", "").casefold().strip()
     domain = clues.get("site_domain", "").casefold().strip().removeprefix("www.")
     # A recognized site domain is more reliable for routing than a broad model label.
-    domain_platforms = {"x.com": "twitter", "twitter.com": "twitter",
+    domain_platforms = {"mp.weixin.qq.com": "wechat", "x.com": "twitter", "twitter.com": "twitter",
                         "xiaohongshu.com": "xiaohongshu", "instagram.com": "instagram"}
     if domain in domain_platforms:
         platform = domain_platforms[domain]

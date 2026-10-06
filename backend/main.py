@@ -3,9 +3,12 @@ import sys
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
+from backend.services.asset_recovery import recover_legacy_upload
 from backend.services.data_paths import DATA_DIR, get_assets_dir, get_screenshots_dir
 from backend.routes.migration import router as migration_router
 from backend.routes.settings import router as settings_router
+from backend.routes.workspaces import router as workspaces_router
 
 # Ensure root directory is in sys.path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -31,8 +34,9 @@ app.add_middleware(
 
 
 class DynamicStaticFiles(StaticFiles):
-    def __init__(self, dir_getter, **kwargs):
+    def __init__(self, dir_getter, recover_legacy_assets=False, **kwargs):
         self.dir_getter = dir_getter
+        self.recover_legacy_assets = recover_legacy_assets
         initial_dir = str(dir_getter())
         os.makedirs(initial_dir, exist_ok=True)
         super().__init__(directory=initial_dir, **kwargs)
@@ -44,15 +48,21 @@ class DynamicStaticFiles(StaticFiles):
             self.all_directories = [current_dir]
         return super().get_path(scope)
 
+    async def get_response(self, path, scope):
+        if self.recover_legacy_assets:
+            await run_in_threadpool(recover_legacy_upload, path, self.dir_getter())
+        return await super().get_response(path, scope)
+
 
 app.mount("/api/screenshots", DynamicStaticFiles(get_screenshots_dir), name="screenshots")
-app.mount("/api/assets", DynamicStaticFiles(get_assets_dir), name="assets")
+app.mount("/api/assets", DynamicStaticFiles(get_assets_dir, recover_legacy_assets=True), name="assets")
 
 app.include_router(cards_router)
 app.include_router(parser_router)
 app.include_router(assets_router)
 app.include_router(migration_router)
 app.include_router(settings_router)
+app.include_router(workspaces_router)
 
 try:
     from backend.services.thumbnail_service import run_batch_pregeneration

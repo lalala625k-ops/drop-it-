@@ -2,14 +2,12 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Group } from '../types';
 import { groupColorText } from '../utils/groupColors';
 import { parseMarkdownHeading } from '../utils/headingUtils';
-import { TourCardHint } from './CardComponent';
 
 interface GroupComponentProps {
   group: Group;
   isSelected: boolean;
   childCount: number;
   isDragOver: boolean;
-  tourHint?: TourCardHint;
   onSelect: (e: React.MouseEvent) => void;
   onRename: (id: string, newTitle: string) => void;
   onUngroup?: (id: string) => void;
@@ -20,7 +18,6 @@ const GroupComponentInner: React.FC<GroupComponentProps> = ({
   isSelected,
   childCount,
   isDragOver,
-  tourHint,
   onSelect,
   onRename,
   onUngroup,
@@ -51,15 +48,11 @@ const GroupComponentInner: React.FC<GroupComponentProps> = ({
     }
   };
 
-  const isTourBouncing = !!tourHint?.bounce;
-
   return (
     <div
       data-group-id={group.id}
-      title="拖动时整体移动关联卡片；Ctrl 拖动仅移动父物体；双击重命名"
+      title="拖动时整体移动关联卡片；Ctrl 拖动仅移动原点；双击重命名"
       className={`group absolute top-0 left-0 select-none flex flex-col items-center justify-center rounded-full cursor-grab active:cursor-grabbing transition-colors duration-150 ${
-        isTourBouncing ? 'animate-tour-bounce' : ''
-      } ${
         isDragOver
           ? 'bg-ink text-paper border-2 border-ink scale-110'
           : isSelected
@@ -69,9 +62,7 @@ const GroupComponentInner: React.FC<GroupComponentProps> = ({
       style={{
         backgroundColor: !isDragOver ? (group.color || undefined) : undefined,
         color: !isDragOver && group.color ? groupColorText(group.color) : undefined,
-        '--tour-x': `${group.x}px`,
-        '--tour-y': `${group.y}px`,
-        transform: isTourBouncing ? undefined : `translate(${group.x}px, ${group.y}px)`,
+        transform: `translate(${group.x}px, ${group.y}px)`,
         width: size,
         height: size,
         zIndex: group.zIndex ?? 5,
@@ -99,7 +90,7 @@ const GroupComponentInner: React.FC<GroupComponentProps> = ({
             e.stopPropagation();
             onUngroup(group.id);
           }}
-          title="解散父物体 (保留子卡片)"
+          title="解散原点 (保留子卡片)"
           className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-paper text-ink border border-ink hover:bg-ink hover:text-paper flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-30 cursor-pointer"
         >
           <svg className="w-2 h-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -171,21 +162,10 @@ const GroupComponentInner: React.FC<GroupComponentProps> = ({
           </div>
         </div>
       )}
-      {/* Tour Hint Tooltip Badge */}
-      {tourHint && (
-        <div className="absolute -top-7 left-1/2 -translate-x-1/2 z-50 pointer-events-none flex flex-col items-center">
-          <div className="px-2 py-0.5 bg-ink text-paper text-[11px] font-bold tracking-wide border border-paper/40 shadow-sm whitespace-nowrap flex items-center gap-1 rounded-sm">
-            <span>{tourHint.label}</span>
-            <span className="text-[10px] opacity-80">↓</span>
-          </div>
-          <div className="w-0 h-0 border-x-4 border-x-transparent border-t-4 border-t-ink" />
-        </div>
-      )}
     </div>
   );
 };
 
 export const GroupComponent = React.memo(GroupComponentInner, (previous, next) =>
   previous.group === next.group && previous.isSelected === next.isSelected &&
-  previous.childCount === next.childCount && previous.isDragOver === next.isDragOver &&
-  previous.tourHint?.label === next.tourHint?.label && previous.tourHint?.bounce === next.tourHint?.bounce);
+  previous.childCount === next.childCount && previous.isDragOver === next.isDragOver);

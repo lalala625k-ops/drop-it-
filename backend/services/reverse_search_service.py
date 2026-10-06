@@ -75,7 +75,7 @@ def _ocr_title(ocr: dict) -> str:
         candidates.append((title, y, font_height))
     if not candidates:
         return ""
-    # Favor prominent text near the primary content area, as in the reference engine.
+    # Favor prominent text near the primary content area.
     max_font = max(item[2] for item in candidates) or 1
     target_y = height * (0.32 if height > width * 1.3 else 0.16)
     candidates.sort(key=lambda item: (item[2] / max_font) * 0.55
@@ -118,7 +118,7 @@ def _platform_from_ocr(text: str) -> str:
 
 
 def _known_domain(text: str) -> str:
-    """Use the imported 155-site catalog for OCR-visible website fingerprints."""
+    """Use the 155-site catalog for OCR-visible website fingerprints."""
     domains = sorted(DOMAIN_TO_PLATFORM_KEY, key=len, reverse=True)
     lower = text.casefold()
     for domain in domains:
@@ -128,7 +128,7 @@ def _known_domain(text: str) -> str:
 
 
 def _search_queries(domain: str, title: str, author: str, clues: dict | None) -> list[str]:
-    """Turn visual fields into the reference project's site-specific search fingerprint."""
+    """Turn visual fields into a site-specific search fingerprint."""
     base = f'site:{domain} "{title[:80]}"'
     queries = [base]
     if clues:

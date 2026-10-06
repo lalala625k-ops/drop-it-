@@ -3,6 +3,7 @@ import { CanvasClipboardSnapshot, clipboardBounds } from '../utils/canvasClipboa
 import { bundleCollapsedHeight, bundleCollapsedWidth, bundleOutline } from '../hooks/useBundleGroups';
 import { getBundleParentIds } from '../utils/groupRelations';
 import { treeNodeCenter } from '../utils/treeTargets';
+import { PIN_PATH, PIN_SIZE } from '../utils/canvasPinGeometry';
 
 interface Props {
   snapshot: CanvasClipboardSnapshot;
@@ -58,5 +59,10 @@ export const ClipboardPastePreview: React.FC<Props> = ({ snapshot, screen, zoom 
     {snapshot.groups.filter((group) => group.kind !== 'bundle').map((group) =>
       <circle key={group.id} cx={group.x + group.width / 2} cy={group.y + group.height / 2}
         r={group.width / 2} fill={group.color || '#ffffff'} stroke="#1d1d1d" strokeWidth="3" />)}
+    {(snapshot.pins || []).map((pin) => <g key={pin.id} transform={`translate(${pin.x - PIN_SIZE / 2} ${pin.y - PIN_SIZE / 2})`}>
+      <path d={PIN_PATH} fill="#1d1d1d" />
+      <circle cx="66.5" cy="66.5" r="9.5" fill="#1d1d1d" />
+      <text x="66.5" y="66.5" textAnchor="middle" dominantBaseline="central" fill="#ffffff" fontSize="11">{pin.index}</text>
+    </g>)}
   </svg>;
 };

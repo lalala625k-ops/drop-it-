@@ -225,6 +225,7 @@ export function usePieMenuState({
           ...c,
           title: title || c.title,
           image,
+          thumbnail: undefined,
           description: typeof metadata.description === 'string' ? metadata.description : c.description,
           favicon: feishu ? FEISHU_LOGO_URLS[0]
             : typeof metadata.favicon === 'string' ? metadata.favicon : c.favicon,

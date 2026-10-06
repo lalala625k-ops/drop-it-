@@ -63,22 +63,56 @@ textarea[data-text-editor]:not(:focus)::selection {
   animation: pin-dot-jump 0.42s cubic-bezier(0.18, 0.89, 0.32, 1.28);
 }
 
-/* Tour sandbox non-linear floating bounce animation (faster & doubled amplitude) */
-@keyframes tour-card-float {
-  0%, 100% {
-    transform: translate(var(--tour-x, 0px), var(--tour-y, 0px));
-  }
-  50% {
-    transform: translate(var(--tour-x, 0px), calc(var(--tour-y, 0px) - 14px));
-  }
+/* The full title bar height reveals it without reserving canvas space. */
+.desktop-window-chrome {
+  --desktop-titlebar-height: 40px;
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 220;
+  height: var(--desktop-titlebar-height);
+  user-select: none;
 }
 
-.animate-tour-bounce {
-  animation: tour-card-float 1.15s cubic-bezier(0.38, 0.05, 0.45, 1) infinite;
+.desktop-titlebar-surface {
+  position: absolute;
+  inset: 0 0 auto;
+  height: var(--desktop-titlebar-height);
+  padding-right: 132px;
+  background: #ffffff;
+  border-bottom: 1px solid #a8a7a2;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-6px);
+  transition: opacity 140ms ease, transform 140ms ease, visibility 140ms;
 }
 
-/* Invisible drag surface for the desktop window; the canvas remains visible beneath it. */
+.desktop-window-chrome:hover .desktop-titlebar-surface,
+.desktop-window-chrome:has(button:focus-visible) .desktop-titlebar-surface,
+.desktop-window-chrome[data-dragging="true"] .desktop-titlebar-surface {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
 .desktop-drag-region {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding: 0 16px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: grab;
   -webkit-app-region: drag;
 }
 
+.desktop-drag-region:active {
+  cursor: grabbing;
+}
+
+.desktop-window-buttons {
+  -webkit-app-region: no-drag;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .desktop-titlebar-surface { transition: none; }
+}

@@ -6,6 +6,7 @@ import { SearchModal } from './SearchModal';
 import { MinimapNav } from './MinimapNav';
 import { ActivePieMenuState } from '../hooks/usePieMenuState';
 import { getBundleParentIds } from '../utils/groupRelations';
+import type { CanvasCommand } from './CanvasCommandMenu';
 
 interface CanvasModalsProps {
   cards: Card[];
@@ -30,6 +31,7 @@ interface CanvasModalsProps {
   onDisconnectGroupParent: (bundleId: string, parentId: string) => void;
   onClosePieMenu: () => void;
   onUniformWidth?: () => void;
+  onCanvasCommand: (command: CanvasCommand, target: PieMenuTarget) => void;
   // Search
   isSearchOpen: boolean;
   onCloseSearch: () => void;
@@ -60,6 +62,7 @@ export const CanvasModals: React.FC<CanvasModalsProps> = ({
   onDisconnectGroupParent,
   onClosePieMenu,
   onUniformWidth,
+  onCanvasCommand,
   isSearchOpen,
   onCloseSearch,
   onSelectSearchCard,
@@ -97,6 +100,7 @@ export const CanvasModals: React.FC<CanvasModalsProps> = ({
           onReparseLink={() => onReparseLink(menuId)}
           onRecognizeImage={(mode) => onRecognizeImage(menuId, mode)}
           onUniformWidth={onUniformWidth}
+          onCommand={(command) => onCanvasCommand(command, menuTarget)}
           onUngroup={() => {
             if (menuTarget.kind === 'bundle') onUngroupBundle(menuId);
             else if (menuTarget.kind === 'parent') onDissolveParent(menuId);

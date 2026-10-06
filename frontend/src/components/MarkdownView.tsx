@@ -85,7 +85,7 @@ function renderInlineMarkdown(text: string): React.ReactNode {
  * Dedicated Markdown Renderer adhering strictly to the note canvas specification:
  * - Level 1 Heading (# ): 24px, font-black (900), leading-[1.15]
  * - Level 2 Heading (## ): 18px, font-bold (700), leading-[1.2]
- * - Level 3+ Heading (### ): 18px, font-bold (700), leading-[1.2]
+ * - Level 3+ Heading (### ): 16px, font-bold (700), leading-[1.25]
  * - Body text: 15px, font-normal (400), leading-[1.40], font-retina (matches note default)
  * - Lists, Blockquotes, horizontal rules
  */
@@ -141,7 +141,7 @@ export const MarkdownView: React.FC<MarkdownViewProps> = ({ content, className =
       elements.push(
         <h3
           key={`h3-${i}`}
-          className="text-[18px] font-bold leading-[1.2] tracking-tight my-0.5 text-ink break-words font-retina"
+          className="text-[16px] font-bold leading-[1.25] tracking-tight my-0.5 text-ink break-words font-retina"
           style={{ fontWeight: 700, color: color || undefined }}
         >
           {renderInlineMarkdown(text)}

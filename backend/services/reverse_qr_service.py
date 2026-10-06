@@ -1,4 +1,4 @@
-"""QR precheck adapted from the reference VisionEngine.detect_qr_code."""
+"""QR precheck helpers."""
 
 import ipaddress
 import re

@@ -31,6 +31,8 @@ export function useVirtualViewport({
     for (const card of cards) if (card.bundleId) counts.set(card.bundleId, (counts.get(card.bundleId) || 0) + 1);
     return counts;
   }, [cards]);
+  const cardsById = useMemo(() => new Map(cards.map((card) => [card.id, card])), [cards]);
+  const groupsById = useMemo(() => new Map(groups.map((group) => [group.id, group])), [groups]);
   const cardIndex = useMemo(() => new SpatialIndex(cards, cardVisualBounds), [cards]);
   const groupBounds = (g: Group) => ({
     x: g.x, y: g.y,
@@ -44,6 +46,7 @@ export function useVirtualViewport({
         visibleCards: [],
         visibleGroups: [],
         visibleCardIdSet: new Set<string>(),
+        viewportCardCount: 0,
         isCullingActive: false,
       };
     }
@@ -57,13 +60,25 @@ export function useVirtualViewport({
     const minY = -viewport.y / zoom - bufferWorld;
     const maxX = (winW - viewport.x) / zoom + bufferWorld;
     const maxY = (winH - viewport.y) / zoom + bufferWorld;
+    const viewportMinX = -viewport.x / zoom;
+    const viewportMinY = -viewport.y / zoom;
+    const viewportMaxX = (winW - viewport.x) / zoom;
+    const viewportMaxY = (winH - viewport.y) / zoom;
 
     const visibleCards: Card[] = [];
     const visibleCardIdSet = new Set<string>();
+    let viewportCardCount = 0;
 
     const query = { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
     const candidates = new Map(cardIndex.query(query).map((card) => [card.id, card]));
-    for (const card of cards) if (selectedCardIds.has(card.id) || highlightedCardIds?.has(card.id)) candidates.set(card.id, card);
+    for (const id of selectedCardIds) {
+      const card = cardsById.get(id);
+      if (card) candidates.set(id, card);
+    }
+    for (const id of highlightedCardIds || []) {
+      const card = cardsById.get(id);
+      if (card) candidates.set(id, card);
+    }
     for (const c of candidates.values()) {
       const bounds = cardVisualBounds(c);
       // Always include selected cards so dragging never vanishes
@@ -78,12 +93,23 @@ export function useVirtualViewport({
       if (isVisible) {
         visibleCards.push(c);
         visibleCardIdSet.add(c.id);
+        if (bounds.x + bounds.width >= viewportMinX && bounds.x <= viewportMaxX &&
+          bounds.y + bounds.height >= viewportMinY && bounds.y <= viewportMaxY) {
+          viewportCardCount += 1;
+        }
       }
     }
 
     const visibleGroups: Group[] = [];
     const groupCandidates = new Map(groupIndex.query(query).map((group) => [group.id, group]));
-    for (const group of groups) if (selectedGroupIds.has(group.id) || highlightedGroupIds?.has(group.id)) groupCandidates.set(group.id, group);
+    for (const id of selectedGroupIds) {
+      const group = groupsById.get(id);
+      if (group) groupCandidates.set(id, group);
+    }
+    for (const id of highlightedGroupIds || []) {
+      const group = groupsById.get(id);
+      if (group) groupCandidates.set(id, group);
+    }
     for (const g of groupCandidates.values()) {
       const { width: gWidth, height: gHeight } = groupBounds(g);
       const isSelected = selectedGroupIds.has(g.id) || !!highlightedGroupIds?.has(g.id);
@@ -103,6 +129,7 @@ export function useVirtualViewport({
       visibleCards,
       visibleGroups,
       visibleCardIdSet,
+      viewportCardCount,
       isCullingActive: true,
     };
   }, [
@@ -118,5 +145,7 @@ export function useVirtualViewport({
     bufferPx,
     cardIndex,
     groupIndex,
+    cardsById,
+    groupsById,
   ]);
 }

@@ -1,21 +1,14 @@
 /**
- * Derives the optimized 800px WebP thumbnail URL for a given image or card.
- * PureRef-style LOD texture management.
+ * Returns the server-provided thumbnail when available, otherwise the source
+ * image. Keeping the source as the fallback makes pasted images work with
+ * older backends that do not expose generated thumbnails.
  */
 export function getThumbnailUrl(image?: string, thumbnail?: string): string | undefined {
   if (thumbnail) return thumbnail;
   if (!image) return undefined;
 
-  if (image.startsWith('/api/assets/')) {
-    const filename = image.substring('/api/assets/'.length);
-    return `/api/thumbnails/assets/${filename}`;
-  }
-
-  if (image.startsWith('/api/screenshots/')) {
-    const filename = image.substring('/api/screenshots/'.length);
-    return `/api/thumbnails/screenshots/${filename}`;
-  }
-
-  // Data URLs or external remote links fallback to raw image
+  // Only use a thumbnail when the server explicitly supplied one. Inferring
+  // a thumbnail URL makes newly pasted images render as broken images when
+  // an older backend has not generated the thumbnail endpoint yet.
   return image;
 }

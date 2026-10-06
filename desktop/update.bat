@@ -6,6 +6,7 @@ echo       Infinite Canvas Note - Fast Rebuild
 echo ========================================================
 echo.
 cd /d "%~dp0..\frontend"
+if exist "dist\.empty-release" del /q "dist\.empty-release"
 call npm run build
 if %errorlevel% neq 0 (
     echo [ERROR] Frontend build failed!

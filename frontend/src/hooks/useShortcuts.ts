@@ -11,9 +11,11 @@ interface UseShortcutsProps {
   onResetSize: () => void;
   onAutoPack: () => void;
   onAlign: (direction: 'top' | 'bottom' | 'left' | 'right') => void;
-  onExportBackup: () => void;
+  onSaveDrop: (saveAs?: boolean) => void;
   onPaste: (e: ClipboardEvent) => void;
   onCopy?: () => void;
+  onCut?: () => void;
+  hasCanvasMultiSelection?: boolean;
   onDuplicate?: () => void;
   onSearch?: () => void;
   onMinimapOpen?: () => void;
@@ -45,9 +47,11 @@ export function useShortcuts({
   onResetSize,
   onAutoPack,
   onAlign,
-  onExportBackup,
+  onSaveDrop,
   onPaste,
   onCopy,
+  onCut,
+  hasCanvasMultiSelection,
   onDuplicate,
   onSearch,
   onMinimapOpen,
@@ -74,6 +78,9 @@ export function useShortcuts({
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Settings and other modal surfaces own their keyboard interactions.
+      // Never let a canvas shortcut fire while a settings modal is open.
+      if (document.querySelector('[data-modal="settings"]')) return;
       const activeTag = document.activeElement?.tagName.toLowerCase();
       const isInputFocused = activeTag === 'input' || activeTag === 'textarea' || (document.activeElement as HTMLElement)?.isContentEditable;
 
@@ -89,12 +96,22 @@ export function useShortcuts({
         }
       }
 
-      if (isInputFocused) return;
-
       const isCtrlOrMeta = e.ctrlKey || e.metaKey;
+      // Saving also works while editing text; never invoke the browser's
+      // Save Page command. Settings retain ownership of their shortcuts.
+      if (isCtrlOrMeta && !e.altKey && (e.code === 'KeyS' || e.key.toLowerCase() === 's')) {
+        e.preventDefault();
+        if (!e.repeat) onSaveDrop(e.shiftKey);
+        return;
+      }
+      const canvasEditorFocused = !!(document.activeElement as HTMLElement | null)?.closest?.('[data-card-id]');
+      const clipboardSelectedObjects = hasCanvasMultiSelection && canvasEditorFocused && isCtrlOrMeta &&
+        !e.shiftKey && !e.altKey && ['c', 'x'].includes(e.key.toLowerCase());
+      if (isInputFocused && !clipboardSelectedObjects) return;
 
-      // F5 or Ctrl+R: Hot reload current window
-      if (e.key === 'F5' || (isCtrlOrMeta && (e.key === 'r' || e.key === 'R'))) {
+      // F5: Hot reload current window. Ctrl+R is reserved for restoring the
+      // selected card or Group to its default size.
+      if (e.key === 'F5') {
         e.preventDefault();
         window.location.reload();
         return;
@@ -107,19 +124,11 @@ export function useShortcuts({
         return;
       }
 
-      // Ctrl + 1 ~ 8: Quick Jump to Pin
+      // Ctrl + 1 ~ 8: Jump only to an existing pin. Missing pins are a no-op.
       if (isCtrlOrMeta && !e.shiftKey && !e.altKey && ['1', '2', '3', '4', '5', '6', '7', '8'].includes(e.key)) {
-        const pinNum = parseInt(e.key, 10);
-        const handled = onJumpToPin?.(pinNum);
-        if (handled) {
-          e.preventDefault();
-          return;
-        }
-        if (e.key === '1') {
-          e.preventDefault();
-          onFitCanvas?.();
-          return;
-        }
+        e.preventDefault();
+        onJumpToPin?.(parseInt(e.key, 10));
+        return;
       }
 
       // H Family: Title & Heading
@@ -127,14 +136,6 @@ export function useShortcuts({
         e.preventDefault();
         if (e.shiftKey) onClearTitle?.();
         else onEditTitle?.();
-        return;
-      }
-
-      // T Family: Time & Now
-      if (isCtrlOrMeta && !e.altKey && (e.key === 't' || e.key === 'T')) {
-        e.preventDefault();
-        if (e.shiftKey) onSetNow?.();
-        else onSetTime?.();
         return;
       }
 
@@ -173,7 +174,7 @@ export function useShortcuts({
         return;
       }
 
-      // New Parent: Ctrl+J or customized
+      // New Origin: Ctrl+J or customized
       if (shortcutsConfig?.newParent ? matchShortcut(e, shortcutsConfig.newParent) : (isCtrlOrMeta && !e.shiftKey && !e.altKey && (e.key === 'j' || e.key === 'J'))) {
         e.preventDefault();
         onGroup();
@@ -195,7 +196,7 @@ export function useShortcuts({
         return;
       }
 
-      // P Family: Parent (Ctrl+P: New parent / associate) & Disconnect Parent (Ctrl+Shift+P)
+      // Ctrl+P compatibility: New origin / associate; Ctrl+Shift+P disconnects the upstream node.
       if (isCtrlOrMeta && !e.altKey && (e.key === 'p' || e.key === 'P')) {
         e.preventDefault();
         if (e.shiftKey) onDisconnectParent?.();
@@ -204,6 +205,11 @@ export function useShortcuts({
       }
 
       // G Family: Group (Ctrl+G), Ungroup (Ctrl+Shift+G), Detach card from group (Ctrl+Alt+G)
+      if (shortcutsConfig?.bundle && matchShortcut(e, shortcutsConfig.bundle)) {
+        e.preventDefault();
+        onBundle();
+        return;
+      }
       if (isCtrlOrMeta && (e.key === 'g' || e.key === 'G')) {
         e.preventDefault();
         if (e.altKey) {
@@ -211,7 +217,7 @@ export function useShortcuts({
         } else if (e.shiftKey) {
           onUngroup();
         } else {
-          onBundle();
+          if (!shortcutsConfig?.bundle) onBundle();
         }
         return;
       }
@@ -234,7 +240,14 @@ export function useShortcuts({
       // Ctrl + C (Copy selected canvas objects and their relationships)
       if (isCtrlOrMeta && !e.shiftKey && !e.altKey && (e.key === 'c' || e.key === 'C')) {
         e.preventDefault();
-        onCopy?.();
+        if (!e.repeat) onCopy?.();
+        return;
+      }
+
+      // Ctrl + X (Cut selected canvas objects, preserving native text editing)
+      if (isCtrlOrMeta && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'x') {
+        e.preventDefault();
+        if (!e.repeat) onCut?.();
         return;
       }
 
@@ -269,15 +282,10 @@ export function useShortcuts({
         return;
       }
 
-      // Backup export (Ctrl + E)
-      if (isCtrlOrMeta && !e.shiftKey && !e.altKey && (e.key === 'e' || e.key === 'E')) {
-        e.preventDefault();
-        onExportBackup();
-        return;
-      }
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
+      if (document.querySelector('[data-modal="settings"]')) return;
       if (e.key === 'Shift') isShiftPressedRef.current = false;
       if (e.key === ' ' || e.code === 'Space') isSpacePressedRef.current = false;
       if (e.key === 'Alt') isAltPressedRef.current = false;
@@ -308,7 +316,7 @@ export function useShortcuts({
     };
   }, [
     onNewCard, onDelete, onUndo, onGroup, onBundle, onUngroup, onResetSize,
-    onAutoPack, onAlign, onExportBackup, onPaste, onCopy, onDuplicate, onSearch,
+    onAutoPack, onAlign, onSaveDrop, onPaste, onCopy, onCut, hasCanvasMultiSelection, onDuplicate, onSearch,
     onMinimapOpen, onMinimapClose, onEditTitle, onClearTitle, onSetTime, onSetNow,
     onManageTags, onDisconnectParent, onDetachFromBundle, onUniformWidth,
     onReparseLink, onRecognizeImageOCR, onRecognizeImageLink, onFitCanvas,

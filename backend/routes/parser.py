@@ -14,7 +14,7 @@ from backend.services.reverse_qr_service import detect_qr_link
 from backend.services.reverse_xiaohongshu_search import search_page_url
 from backend.services.reverse_manual_search import build_manual_search
 from backend.services.reverse_instagram_caption import extract_instagram_caption
-from backend.services.reverse_site_fingerprints import sspai_matrix_page
+from backend.services.reverse_site_fingerprints import sspai_matrix_page, wechat_article_clues
 from backend.services.reverse_trace import begin_trace, record, snapshot
 
 router = APIRouter(prefix="/api", tags=["parser"])
@@ -125,7 +125,17 @@ async def resolve_image(request: Request, file: Optional[UploadFile] = File(None
     except asyncio.TimeoutError:
         clues, vision_status = None, "timeout"
     corrected_platform = False
-    if clues and sspai_matrix_page(text) and search_target(clues) != ("sspai", "sspai.com"):
+    wechat_clues = wechat_article_clues(ocr)
+    if clues and wechat_clues:
+        original_platform = str(clues.get("platform") or "")
+        original_domain = str(clues.get("site_domain") or "")
+        record("vision", vision_status, json.dumps({key: clues.get(key, "") for key in
+               ("platform", "site_domain", "title", "author", "id")}, ensure_ascii=False)[:500])
+        clues.update(wechat_clues)
+        record("platform_correction", "completed",
+               f"模型原判 {original_platform} · {original_domain}；顶部大标题、日期时间属地及底部公众号名相互印证，采用外层微信文章标题和公众号")
+        corrected_platform = True
+    elif clues and sspai_matrix_page(text) and search_target(clues) != ("sspai", "sspai.com"):
         original_platform = str(clues.get("platform") or "")
         original_domain = str(clues.get("site_domain") or "")
         record("vision", vision_status, json.dumps({key: clues.get(key, "") for key in

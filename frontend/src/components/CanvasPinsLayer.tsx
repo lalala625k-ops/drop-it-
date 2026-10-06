@@ -1,8 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { CanvasPin } from '../hooks/useCanvasPins';
+import { PIN_PATH, pinScale } from '../utils/canvasPinGeometry';
 
 interface CanvasPinsLayerProps {
   pins: CanvasPin[];
+  selectedPinIds: Set<string>;
+  onSelect: (id: string, shift: boolean) => void;
   onJump: (index: number) => void;
   onRemove: (index: number) => void;
   onUpdatePosition: (index: number, x: number, y: number) => void;
@@ -15,10 +18,13 @@ interface DragState {
   startMouse: { x: number; y: number };
   currentMouse: { x: number; y: number };
   hasMoved: boolean;
+  jumpOnRelease: boolean;
 }
 
 export const CanvasPinsLayer: React.FC<CanvasPinsLayerProps> = ({
   pins,
+  selectedPinIds,
+  onSelect,
   onJump,
   onRemove,
   onUpdatePosition,
@@ -54,7 +60,7 @@ export const CanvasPinsLayer: React.FC<CanvasPinsLayerProps> = ({
           const finalX = current.startWorld.x + dx / zoom;
           const finalY = current.startWorld.y + dy / zoom;
           onUpdatePosition(current.index, finalX, finalY);
-        } else {
+        } else if (current.jumpOnRelease) {
           onJump(current.index);
         }
       }
@@ -72,7 +78,7 @@ export const CanvasPinsLayer: React.FC<CanvasPinsLayerProps> = ({
   if (!pins.length) return null;
 
   // Scale pin slightly when zoom is very far so it stays readable, but keep it elegant
-  const scale = zoom < 0.4 ? Math.min(2.0, 0.4 / zoom) : 1;
+  const scale = pinScale(zoom);
 
   return (
     <div className="absolute inset-0 pointer-events-none z-[12]">
@@ -88,6 +94,7 @@ export const CanvasPinsLayer: React.FC<CanvasPinsLayerProps> = ({
         return (
           <div
             key={pin.id}
+            data-pin-id={pin.id}
             className={`group absolute -translate-x-1/2 -translate-y-1/2 pointer-events-auto select-none flex items-center justify-center ${
               isDragging ? 'z-50' : ''
             }`}
@@ -97,7 +104,7 @@ export const CanvasPinsLayer: React.FC<CanvasPinsLayerProps> = ({
               transform: `translate(-50%, -50%) scale(${scale})`,
               transformOrigin: 'center center',
             }}
-            title={`图钉 ${pin.index} · 拖拽移动位置，点击或按 Ctrl+${pin.index} 跳转，右键删除`}
+            title={`图钉 ${pin.index} · 框选或 Shift+单击选择，拖拽移动，按 Ctrl+${pin.index} 跳转，右键删除`}
           >
             {/* Main Pin Graphic (2x Enlarged Filleted Cross + Concentric Number Dot) */}
             <div
@@ -105,12 +112,14 @@ export const CanvasPinsLayer: React.FC<CanvasPinsLayerProps> = ({
                 if (e.button !== 0) return;
                 e.stopPropagation();
                 e.preventDefault();
+                if (e.shiftKey || !selectedPinIds.has(pin.id)) onSelect(pin.id, e.shiftKey);
                 setDragState({
                   index: pin.index,
                   startWorld: { x: pin.x, y: pin.y },
                   startMouse: { x: e.clientX, y: e.clientY },
                   currentMouse: { x: e.clientX, y: e.clientY },
                   hasMoved: false,
+                  jumpOnRelease: !e.shiftKey && !selectedPinIds.has(pin.id),
                 });
               }}
               onContextMenu={(e) => {
@@ -119,6 +128,8 @@ export const CanvasPinsLayer: React.FC<CanvasPinsLayerProps> = ({
                 onRemove(pin.index);
               }}
               className={`relative w-[88px] h-[88px] select-none transition-transform duration-75 flex items-center justify-center ${
+                selectedPinIds.has(pin.id) ? 'outline outline-2 outline-ink outline-offset-4' : ''
+              } ${
                 isDragging
                   ? 'cursor-grabbing scale-105 drop-shadow-md'
                   : 'cursor-grab hover:scale-105 active:scale-95'
@@ -132,7 +143,7 @@ export const CanvasPinsLayer: React.FC<CanvasPinsLayerProps> = ({
                 className="absolute inset-0 pointer-events-none fill-ink drop-shadow-sm"
               >
                 <path
-                  d="M 39.5 8.0 L 48.5 8.0 L 48.5 21.5 A 18.0 18.0 0 0 0 66.5 39.5 L 80.0 39.5 L 80.0 48.5 L 66.5 48.5 A 18.0 18.0 0 0 0 48.5 66.5 L 48.5 80.0 L 39.5 80.0 L 39.5 66.5 A 18.0 18.0 0 0 0 21.5 48.5 L 8.0 48.5 L 8.0 39.5 L 21.5 39.5 A 18.0 18.0 0 0 0 39.5 21.5 Z"
+                  d={PIN_PATH}
                 />
               </svg>
 

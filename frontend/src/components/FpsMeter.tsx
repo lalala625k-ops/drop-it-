@@ -57,7 +57,7 @@ export const FpsMeter: React.FC<FpsMeterProps> = ({ enabled, onToggle }) => {
 
   return (
     <div
-      className="fixed left-3 top-3 z-[115] select-none pointer-events-auto"
+      className="select-none pointer-events-auto"
       onMouseDown={(e) => e.stopPropagation()}
       onDoubleClick={(e) => e.stopPropagation()}
     >

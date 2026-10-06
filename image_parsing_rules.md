@@ -173,4 +173,6 @@ flowchart LR
 
 反向链路的站点例外：YouTube 搜索沿用本地代理并逐条核验视频候选；少数派用文章 API 返回可核对的 `/post/{id}` 候选，OCR 同时出现 Matrix 首页推荐与少数派写作社区文案时纠正模型的平台误判。Instagram 无独立标题时由程序从 OCR 正文选择搜索词；未登录的站内搜索和公开主页目前不能稳定提供可读帖子列表，尚无登录后自动查帖。小红书跳过 Bing 定向补充，提供站内搜索和人工选择。
 
+微信公众号平台判定优先使用外层文章布局：模型提示同时覆盖无“原创”标签、底栏只有图标和正文内嵌社交截图的情况。OCR 中顶部较大标题、日期时间属地行和底部重复公众号名相互印证时，纠正平台、域名、标题与公众号名，并清除内嵌截图可能带入的 ID 等检索字段；缺少完整几何证据时不强行纠正。`mp.weixin.qq.com` 域名也优先路由微信。搜狗第一轮只按标题查询，兼容解析器可能组合标题片段与公众号名；微信公众号直链不再通过二次抓取签名页面复核，仍有标题匹配和签名链接有效期方面的限制。
+
 这条反向识别链路主要位于 `backend/services/reverse_direct_service.py`、`backend/services/reverse_resolution_search.py`、`backend/services/reverse_instagram_caption.py`、`backend/services/reverse_site_fingerprints.py` 和 `backend/routes/parser.py`。它不属于受保护站点的正向元数据/封面解析规则；反向识别成功后，网页卡元数据仍由原有解析调度获取，P-001～P-005、P-007 与 G-001 的保护约束保持适用。

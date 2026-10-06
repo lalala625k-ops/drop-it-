@@ -6,7 +6,7 @@ export interface ShortcutSettings {
   autoPack: string;     // 默认 Ctrl+P
   bundle: string;       // 默认 Ctrl+G
   newParent: string;    // 默认 Ctrl+J
-  resetSize: string;    // 默认 Ctrl+O
+  resetSize: string;    // 默认 Ctrl+R
   openSettings: string; // 默认 Ctrl+,
 }
 
@@ -27,7 +27,7 @@ export const DEFAULT_SHORTCUTS: ShortcutSettings = {
   autoPack: 'Ctrl+P',
   bundle: 'Ctrl+G',
   newParent: 'Ctrl+J',
-  resetSize: 'Ctrl+O',
+  resetSize: 'Ctrl+R',
   openSettings: 'Ctrl+,',
 };
 

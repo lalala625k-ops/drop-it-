@@ -1,12 +1,12 @@
 {
   "name": "infinite-canvas-note",
   "private": true,
-  "version": "1.0.0",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
-    "preview": "vite preview"
+    "build": "tsc && node build.mjs",
+    "test:clipboard": "node --test tests/canvasClipboard.test.mjs",
+    "test:menus": "node --test tests/radialMenu.test.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",

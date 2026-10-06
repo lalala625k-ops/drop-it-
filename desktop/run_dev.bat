@@ -1,6 +1,6 @@
 @echo off
 setlocal
-title Infinite Canvas Note - Live Dev
+title DropIt - Live Dev
 echo ========================================================
 echo       Infinite Canvas Note - Live Dev (Vite HMR)
 echo ========================================================

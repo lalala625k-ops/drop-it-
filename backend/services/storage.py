@@ -16,6 +16,9 @@ _lock = threading.RLock()
 
 
 def _legacy_payload() -> Dict[str, Any]:
+    from backend.services.workspace_session import board_directory
+    if os.environ.get("PINBOARD_NEW_BOARD") == "1" or board_directory.get() is not None:
+        return {"cards": [], "groups": []}
     source = LEGACY_DATA_DIR / "cards.json"
     if not source.is_file():
         return {"cards": [], "groups": []}
@@ -36,7 +39,7 @@ def _prepare_directory() -> None:
     current_assets_dir.mkdir(exist_ok=True)
     current_screenshots_dir.mkdir(exist_ok=True)
     current_thumbnails_dir.mkdir(exist_ok=True)
-    if db_file.exists() or current_data_dir == LEGACY_DATA_DIR:
+    if db_file.exists() or current_data_dir == LEGACY_DATA_DIR or os.environ.get("PINBOARD_RELEASE_EMPTY") == "1" or os.environ.get("PINBOARD_NEW_BOARD") == "1":
         return
     source = LEGACY_DATA_DIR / "cards.json"
     if not source.is_file():
@@ -109,6 +112,8 @@ def load_data_from_disk() -> Dict[str, Any]:
         rows = connection.execute("SELECT kind,data FROM objects ORDER BY rowid").fetchall()
         revision = int(connection.execute("SELECT value FROM meta WHERE key='revision'").fetchone()[0])
         pins_row = connection.execute("SELECT value FROM meta WHERE key='pins'").fetchone()
+        viewport_row = connection.execute("SELECT value FROM meta WHERE key='viewport'").fetchone()
+        initialized = connection.execute("SELECT 1 FROM meta WHERE key='initialized'").fetchone() is not None or revision > 0
         pins = []
         if pins_row and pins_row[0]:
             try:
@@ -118,6 +123,8 @@ def load_data_from_disk() -> Dict[str, Any]:
     return {"cards": [json.loads(raw) for kind, raw in rows if kind == "card"],
             "groups": [json.loads(raw) for kind, raw in rows if kind == "group"],
             "pins": pins,
+            "viewport": json.loads(viewport_row[0]) if viewport_row else None,
+            "initialized": initialized,
             "revision": revision}
 
 
@@ -136,6 +143,7 @@ def apply_changes(base_revision: int, upsert_cards: list, upsert_groups: list,
                 connection.executemany("DELETE FROM objects WHERE kind=? AND id=?", [(kind, id) for id in ids])
             revision += 1
             connection.execute("UPDATE meta SET value=? WHERE key='revision'", (str(revision),))
+            connection.execute("INSERT OR REPLACE INTO meta VALUES ('initialized','1')")
     return revision
 
 
@@ -167,7 +175,17 @@ def force_replace_all(data: Dict[str, Any]) -> int:
                                        (kind, item["id"], json.dumps(item, ensure_ascii=False)))
             revision += 1
             connection.execute("INSERT OR REPLACE INTO meta VALUES ('revision', ?)", (str(revision),))
+            connection.execute("INSERT OR REPLACE INTO meta VALUES ('initialized','1')")
+            for key in ("viewport", "pins"):
+                if key in data:
+                    connection.execute("INSERT OR REPLACE INTO meta VALUES (?,?)", (key, json.dumps(data[key], ensure_ascii=False)))
     return revision
+
+
+def save_workspace_extras(viewport: dict | None, pins: list) -> None:
+    with _lock, closing(_connect()) as connection, connection:
+        for key, value in (("viewport", viewport), ("pins", pins), ("initialized", True)):
+            connection.execute("INSERT OR REPLACE INTO meta VALUES (?,?)", (key, json.dumps(value)))
 
 
 def export_git_snapshot(destination: Path) -> None:

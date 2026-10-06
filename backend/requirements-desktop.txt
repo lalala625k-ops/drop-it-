@@ -7,3 +7,4 @@ requests==2.34.2
 beautifulsoup4==4.15.0
 python-multipart==0.0.32
 pyinstaller>=6.16,<7
+pywebview==6.2.1

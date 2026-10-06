@@ -55,35 +55,47 @@ export const MinimapNav: React.FC<MinimapNavProps> = ({
     return () => window.removeEventListener('resize', updateSize);
   }, []);
 
-  // World bounds enclosing all cards, groups, and current viewport
+  const contentBounds = useMemo(() => {
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    const memberCounts = new Map<string, number>();
+    for (const card of cards) if (card.bundleId) {
+      memberCounts.set(card.bundleId, (memberCounts.get(card.bundleId) || 0) + 1);
+    }
+    for (const card of cards) {
+      if (card.bundleId && bundleIds.has(card.bundleId)) continue;
+      const bounds = cardVisualBounds(card);
+      minX = Math.min(minX, bounds.x);
+      maxX = Math.max(maxX, bounds.x + bounds.width);
+      minY = Math.min(minY, bounds.y);
+      maxY = Math.max(maxY, bounds.y + bounds.height);
+    }
+    for (const group of groups) {
+      const width = group.kind === 'bundle' && group.collapsed
+        ? bundleCollapsedWidth(group.width) : (group.width || 120);
+      const height = group.kind === 'bundle' && group.collapsed
+        ? bundleCollapsedHeight(memberCounts.get(group.id) || 0) : (group.height || 120);
+      minX = Math.min(minX, group.x);
+      maxX = Math.max(maxX, group.x + width);
+      minY = Math.min(minY, group.y);
+      maxY = Math.max(maxY, group.y + height);
+    }
+    return { minX, maxX, minY, maxY };
+  }, [cards, groups, bundleIds]);
+
+  // Only the viewport rectangle and the map projection change during navigation.
   const { minX, minY, scale, offsetX, offsetY, vpRect, mapWidth, mapHeight } = useMemo(() => {
     const vpLeft = -viewport.x / viewport.zoom;
     const vpTop = -viewport.y / viewport.zoom;
     const vpRight = (windowSize.width - viewport.x) / viewport.zoom;
     const vpBottom = (windowSize.height - viewport.y) / viewport.zoom;
 
-    let bMinX = vpLeft;
-    let bMaxX = vpRight;
-    let bMinY = vpTop;
-    let bMaxY = vpBottom;
-
-    cards.forEach((c) => {
-      if (c.bundleId && bundleIds.has(c.bundleId)) return;
-      const bounds = cardVisualBounds(c);
-      bMinX = Math.min(bMinX, bounds.x);
-      bMaxX = Math.max(bMaxX, bounds.x + bounds.width);
-      bMinY = Math.min(bMinY, bounds.y);
-      bMaxY = Math.max(bMaxY, bounds.y + bounds.height);
-    });
-
-    groups.forEach((g) => {
-      const gw = g.kind === 'bundle' && g.collapsed ? bundleCollapsedWidth(g.width) : (g.width || 120);
-      const gh = g.kind === 'bundle' && g.collapsed ? bundleCollapsedHeight(cards.filter((card) => card.bundleId === g.id).length) : (g.height || 120);
-      bMinX = Math.min(bMinX, g.x);
-      bMaxX = Math.max(bMaxX, g.x + gw);
-      bMinY = Math.min(bMinY, g.y);
-      bMaxY = Math.max(bMaxY, g.y + gh);
-    });
+    let bMinX = Math.min(vpLeft, contentBounds.minX);
+    let bMaxX = Math.max(vpRight, contentBounds.maxX);
+    let bMinY = Math.min(vpTop, contentBounds.minY);
+    let bMaxY = Math.max(vpBottom, contentBounds.maxY);
 
     // Compact world padding to eliminate excess empty space around content
     const worldPad = expanded ? 100 : 30;
@@ -190,7 +202,7 @@ export const MinimapNav: React.FC<MinimapNavProps> = ({
       mapWidth,
       mapHeight,
     };
-  }, [cards, groups, bundleIds, viewport, expanded, windowSize]);
+  }, [contentBounds, viewport, expanded, windowSize]);
 
   const localPoint = (clientX: number, clientY: number) => {
     const rect = containerRef.current?.getBoundingClientRect();

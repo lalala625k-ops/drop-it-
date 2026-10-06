@@ -9,24 +9,18 @@ import { ClipboardPastePreview } from './components/ClipboardPastePreview';
 import { SelectionBox } from './components/SelectionBox';
 import { SnapGuides } from './components/SnapGuides';
 import { CanvasCommandMenu, CanvasCommand } from './components/CanvasCommandMenu';
+import { applyGroupMenuAction } from './utils/groupMenuActions';
 import { CanvasModals } from './components/CanvasModals';
-import { ReverseResolutionPanel } from './components/ReverseResolutionPanel';
-import { RecognitionDiagnostics } from './components/RecognitionDiagnostics';
-import { RecognitionReport } from './utils/recognizeCardImage';
+import { DesktopWindowControls } from './components/DesktopWindowControls';
 import { useCanvasPins } from './hooks/useCanvasPins';
 import { PinInputModal } from './components/PinInputModal';
 import { CanvasPinsLayer } from './components/CanvasPinsLayer';
 import { useSettings } from './hooks/useSettings';
 import { SettingsModal } from './components/SettingsModal';
-import { useTourGuide } from './hooks/useTourGuide';
-import { TourHandbookModal } from './components/TourHandbookModal';
-import { TourMinimalPrompt } from './components/TourMinimalPrompt';
-import { FpsMeter } from './components/FpsMeter';
-import { PerformanceHUD } from './components/PerformanceHUD';
 
 import { computeCardFocusViewport } from './utils/canvas';
 import { getNowFormatted } from './utils/dateParser';
-import { exportBackup, getLocalData, getRemoteRevision, currentServerRevision } from './utils/storage';
+import { acceptLoadedWorkspace, getLocalData, getRemoteRevision, currentServerRevision, openDropFile, saveDropFile } from './utils/storage';
 import { getParentLinkage } from './utils/groupRelations';
 
 import { useViewport } from './hooks/useViewport';
@@ -44,6 +38,9 @@ import { useCanvasInteractions } from './hooks/useCanvasInteractions';
 import { useCanvasDrop } from './hooks/useCanvasDrop';
 import { useCanvasActions } from './hooks/useCanvasActions';
 import { useCanvasInit } from './hooks/useCanvasInit';
+import { useWorkspaceDraft } from './hooks/useWorkspaceDraft';
+import { flushWorkspaceDraft, workspaceRequest, LoadedWorkspace } from './utils/workspaceApi';
+import { useCanvasCards } from './hooks/useCanvasCards';
 import { useVirtualViewport } from './hooks/useVirtualViewport';
 import { bundleBoundsFromMembers, bundleCollapsedHeight, bundleCollapsedWidth, useBundleGroups } from './hooks/useBundleGroups';
 
@@ -58,6 +55,9 @@ export default function App() {
   const [pressedObject, setPressedObject] = useState<string | null>(null);
   const [canvasMenuPosition, setCanvasMenuPosition] = useState<{ x: number; y: number } | null>(null);
   const suppressPasteClickRef = useRef(false);
+  const savingDropRef = useRef(false);
+  const [toast, setToast] = useState<string | null>(null);
+  const showToast = useCallback((msg: string) => setToast(msg), []);
 
   useEffect(() => {
     const release = () => setPressedObject(null);
@@ -70,8 +70,12 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const onConflict = () => window.alert('另一窗口已经修改画布。本窗口的修改已保存在本地，请先备份或刷新后处理冲突。');
+    // A blocking browser alert can make the canvas appear frozen (especially
+    // in the desktop WebView, where the dialog is easy to miss).  Surface the
+    // same conflict as the app toast so the board remains interactive.
+    const onConflict = () => showToast('另一窗口已经修改画布。本窗口的修改已保存在本地，请先备份或刷新后处理冲突。');
     const onFocus = async () => {
+      if (savingDropRef.current) return;
       const revision = await getRemoteRevision();
       if (revision === null || revision === currentServerRevision()) return;
       if (getLocalData()?.pendingSync) { onConflict(); return; }
@@ -83,16 +87,8 @@ export default function App() {
       window.removeEventListener('focus', onFocus);
       window.removeEventListener('pinboard-sync-conflict', onConflict);
     };
-  }, []);
+  }, [showToast]);
 
-  const [toast, setToast] = useState<string | null>(null);
-  const [recognitionReports, setRecognitionReports] = useState<RecognitionReport[]>([]);
-  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
-  const onRecognitionReport = useCallback((report: RecognitionReport) => {
-    setRecognitionReports((previous) => [report, ...previous].slice(0, 20));
-    setDiagnosticsOpen(true);
-  }, []);
-  const showToast = useCallback((msg: string) => setToast(msg), []);
   useEffect(() => {
     if (!toast) return;
     const timer = window.setTimeout(() => setToast(null), 5000);
@@ -108,18 +104,23 @@ export default function App() {
     resetShortcuts,
   } = useSettings();
 
-  const { pushHistory, undo } = useHistory();
   const {
     viewport,
     setViewport,
     viewportRef,
+    surfaceRef,
     mouseScreenRef,
     mouseWorldRef,
     handleWheel,
+    flushWheelZoom,
+    isWheelZooming,
+    wheelLodZoom,
     handleCardDoubleClick,
     handleCanvasDoubleClick,
   } = useViewport({ invertWheelZoom: settings.general.invertWheelZoom });
 
+  const canvasPins = useCanvasPins({ viewportRef, setViewport, showToast });
+  const { pushHistory, undo } = useHistory(canvasPins.pinsRef);
   const {
     selectedCardIds,
     setSelectedCardIds,
@@ -127,14 +128,18 @@ export default function App() {
     selectedGroupIds,
     setSelectedGroupIds,
     selectedGroupIdsRef,
+    selectedPinIds,
+    setSelectedPinIds,
+    selectedPinIdsRef,
     selectionRect,
     setSelectionRect,
     clearSelection,
     selectCard,
     selectGroup,
+    selectPin,
     beginMarqueeSelection,
     updateMarqueeSelection,
-  } = useSelection();
+  } = useSelection(canvasPins.pinsRef, viewportRef);
 
   const {
     groups,
@@ -165,9 +170,7 @@ export default function App() {
       ? bundleBoundsFromMembers(membersByBundle.get(group.id) || [], group) : group
   ), [groups, membersByBundle]);
   const collapsedIds = useMemo(() => new Set(groups.filter((group) => group.kind === 'bundle' && group.collapsed).map((group) => group.id)), [groups]);
-  const canvasCards = useMemo(() => cards
-    .filter((card) => !card.bundleId || !collapsedIds.has(card.bundleId))
-    .map((card) => ({ ...card, color: undefined, textColor: undefined, borderColor: undefined })), [cards, collapsedIds]);
+  const canvasCards = useCanvasCards(cards, collapsedIds);
   const fitGroups = useMemo(() => displayGroups.map((group) => group.kind === 'bundle' && group.collapsed
     ? { ...group, width: bundleCollapsedWidth(group.width), height: bundleCollapsedHeight(cards.filter((card) => card.bundleId === group.id).length) }
     : group), [displayGroups, cards]);
@@ -192,6 +195,10 @@ export default function App() {
     groupsRef,
     selectedCardIdsRef,
     selectedGroupIdsRef,
+    pinsRef: canvasPins.pinsRef,
+    selectedPinIdsRef,
+    replacePins: canvasPins.replacePins,
+    setSelectedPinIds,
     setSelectedCardIds,
     setSelectedGroupIds,
     setCards,
@@ -203,10 +210,7 @@ export default function App() {
     showToast,
   });
 
-  const pieMenu = usePieMenuState({ cardsRef, groupsRef, setCards, setGroups, pushHistory, showToast, onRecognitionReport });
-  const resolutionCard = pieMenu.resolutionPanel
-    ? cards.find((card) => card.id === pieMenu.resolutionPanel?.cardId && card.type === 'image')
-    : null;
+  const pieMenu = usePieMenuState({ cardsRef, groupsRef, setCards, setGroups, pushHistory, showToast });
 
   const actions = useCanvasActions({
     cardsRef,
@@ -216,6 +220,9 @@ export default function App() {
     selectedCardIdsRef,
     setSelectedCardIds,
     selectedGroupIdsRef,
+    pinsRef: canvasPins.pinsRef,
+    selectedPinIdsRef,
+    replacePins: canvasPins.replacePins,
     setSelectedGroupIds,
     maxZIndexRef,
     mouseWorldRef,
@@ -241,10 +248,8 @@ export default function App() {
       next.delete(parentId);
       return next;
     });
-    showToast('已解散父物体，卡片已保留');
+    showToast('已解散原点，卡片已保留');
   }, [actions.commitState, pushHistory, setSelectedGroupIds, showToast]);
-
-  useCanvasInit({ setCards, setGroups, setViewport, maxZIndexRef });
 
   const parentHighlights = useMemo(() => {
     const cardIds = new Set<string>();
@@ -267,32 +272,17 @@ export default function App() {
     highlightedGroupIds: parentHighlights.bundleIds,
     bufferPx: 300,
   });
-  const farMode = viewport.zoom < 0.18 && visibleCards.length > 150;
+  const farModeCandidate = viewport.zoom < 0.18 && visibleCards.length > 150;
+  const farModeRef = useRef(farModeCandidate);
+  if (!isWheelZooming) farModeRef.current = farModeCandidate;
+  const farMode = isWheelZooming ? farModeRef.current : farModeCandidate;
+  // Keep image cards on the DOM rendering path. The experimental canvas
+  // compositor could leave a card frame visible when a canvas image failed
+  // to load, while the regular image element has a reliable source fallback.
+  const highQualityImageMode = true;
   const bundleContentScales = useMemo(() => new Map(groups
     .filter((group) => group.kind === 'bundle')
     .map((group) => [group.id, (group.outlinePadding ?? 18) / 18])), [groups]);
-
-  const canvasPins = useCanvasPins({
-    viewportRef,
-    setViewport,
-    showToast,
-  });
-
-  const tour = useTourGuide({
-    cards,
-    groups,
-    cardsRef,
-    groupsRef,
-    setCards,
-    setGroups,
-    viewportRef,
-    setViewport,
-    canvasPins,
-    pushHistory,
-    commitState: actions.commitState,
-    showToast,
-    onFitCanvas: () => handleCanvasDoubleClick(cardsRef.current, groupsRef.current),
-  });
 
   // Paste & Shortcuts
   const { handlePaste, handleDroppedData, pasteFromSystemClipboard } = useClipboardPaste({
@@ -300,6 +290,7 @@ export default function App() {
     updateCard: actions.handleCardUpdate,
     stageCopiedObjects: clipboard.stagePaste,
     getCopiedObjects: () => clipboard.copiedObjectsRef.current,
+    hasCanvasMultiSelection: selectedCardIds.size + selectedGroupIds.size + selectedPinIds.size > 1,
     getWorldPosition: () => mouseWorldRef.current,
     getCardById: (id) => cardsRef.current.find((card) => card.id === id),
     showToast,
@@ -436,6 +427,53 @@ export default function App() {
     if (cardId) pieMenu.handleRecognizeImage(cardId, 'link');
   }, [pieMenu]);
 
+  const handleSaveDrop = useCallback(async (saveAs = false) => {
+    if (savingDropRef.current) return;
+    savingDropRef.current = true;
+    setToast(null);
+    try {
+      await flushWorkspaceDraft();
+      const result = await saveDropFile(cardsRef.current, groupsRef.current, viewportRef.current, canvasPins.pins, saveAs);
+      if (result.success) showToast(`保存成功，文件已保存到：\n${result.path}`);
+    } catch (error) {
+      showToast(`保存失败: ${error instanceof Error ? error.message : '无法写入 .drop 文件'}`);
+    } finally {
+      savingDropRef.current = false;
+    }
+  }, [cardsRef, groupsRef, viewportRef, canvasPins.pins, showToast]);
+
+  const handleOpenDrop = useCallback(async () => {
+    if (savingDropRef.current) return;
+    savingDropRef.current = true;
+    setToast(null);
+    try {
+      await flushWorkspaceDraft();
+      const result = await openDropFile();
+      if (!result.success) return;
+      setCards(result.cards);
+      setGroups(result.groups);
+      clearSelection();
+      acceptLoadedWorkspace(result.cards, result.groups, result.revision, result.workspace_id);
+      if (result.viewport && typeof result.viewport.x === 'number' &&
+        typeof result.viewport.y === 'number' && typeof result.viewport.zoom === 'number') {
+        setViewport(result.viewport);
+      } else {
+        handleCanvasDoubleClick(result.cards, result.groups);
+      }
+      canvasPins.replacePins(Array.isArray(result.pins) ? result.pins : []);
+      let maxZ = 10;
+      result.cards.forEach((card) => {
+        if (card.zIndex && card.zIndex > maxZ) maxZ = card.zIndex;
+      });
+      maxZIndexRef.current = maxZ + 1;
+      showToast(`打开成功：${result.path}`);
+    } catch (error) {
+      showToast(`打开失败: ${error instanceof Error ? error.message : '无法读取 .drop 文件'}`);
+    } finally {
+      savingDropRef.current = false;
+    }
+  }, [canvasPins, handleCanvasDoubleClick, clearSelection, setViewport, showToast]);
+
   const { isShiftPressedRef, isSpacePressedRef, isAltPressedRef } = useShortcuts({
     onNewCard: () => actions.createCardAtCursor({ type: 'text', content: '', width: 260, height: 180 }),
     onDelete: actions.handleDeleteSelected,
@@ -451,9 +489,11 @@ export default function App() {
     },
     onAutoPack: actions.handleAutoPack,
     onAlign: actions.handleAlign,
-    onExportBackup: () => { exportBackup(cardsRef.current, groupsRef.current); showToast('已导出备份'); },
+    onSaveDrop: (saveAs) => { void handleSaveDrop(saveAs); },
     onPaste: handlePaste,
     onCopy: clipboard.handleCopy,
+    onCut: clipboard.handleCut,
+    hasCanvasMultiSelection: selectedCardIds.size + selectedGroupIds.size + selectedPinIds.size > 1,
     onDuplicate: clipboard.handleDuplicateSelected,
     onSearch: () => setIsSearchOpen(true),
     onMinimapOpen: minimap.handleMinimapOpen,
@@ -475,21 +515,6 @@ export default function App() {
     onOpenSettings: () => setIsSettingsOpen(true),
   });
 
-  const handleImportComplete = useCallback((data: {
-    cards: Card[];
-    groups: any[];
-    viewport?: Viewport;
-    pins?: any[];
-  }) => {
-    pushHistory(cardsRef.current, groupsRef.current);
-    actions.commitState(data.cards, data.groups);
-    if (data.viewport) {
-      setViewport(data.viewport);
-    }
-    if (data.pins && Array.isArray(data.pins)) {
-      canvasPins.replacePins(data.pins);
-    }
-  }, [actions.commitState, canvasPins, pushHistory, setViewport]);
 
   useEffect(() => {
     if (!clipboard.hasPendingPaste) return;
@@ -563,14 +588,49 @@ export default function App() {
     mouseWorldRef,
     cardsRef,
     groupsRef,
-    setViewport,
-    commitState: actions.commitState,
-    pushHistory,
     createCardAtCursor: actions.createCardAtCursor,
     handleCardUpdate: actions.handleCardUpdate,
     handleDroppedData,
     showToast,
   });
+
+  const workspaceReady = useCanvasInit({ setCards, setGroups, setViewport, maxZIndexRef, replacePins: canvasPins.replacePins });
+  useWorkspaceDraft(workspaceReady, { cards, groups, viewport, pins: canvasPins.pins }, showToast);
+
+  const handleRestoreWorkspace = async (workspaceId: string, snapshotId: string) => {
+    if (savingDropRef.current) throw new Error('正在处理文件，请稍候');
+    savingDropRef.current = true;
+    try {
+      const reserved = await workspaceRequest<{ reservation_id: string }>('/api/workspace/reserve-recovery', { workspace_id: workspaceId, snapshot_id: snapshotId });
+      await flushWorkspaceDraft();
+      const loaded = await workspaceRequest<LoadedWorkspace>('/api/workspace/restore', { workspace_id: workspaceId, snapshot_id: snapshotId, reservation_id: reserved.reservation_id });
+      acceptLoadedWorkspace(loaded.cards, loaded.groups, loaded.revision, loaded.workspace_id);
+      setCards(loaded.cards); setGroups(loaded.groups);
+      if (loaded.viewport) setViewport(loaded.viewport);
+      else handleCanvasDoubleClick(loaded.cards, loaded.groups);
+      canvasPins.replacePins(loaded.pins);
+      clearSelection();
+      maxZIndexRef.current = Math.max(10, ...loaded.cards.map((card) => card.zIndex || 0)) + 1;
+      showToast('已恢复所选版本，当前修改已另行暂存。');
+    } finally { savingDropRef.current = false; }
+  };
+
+  const handleTextEditStart = useCallback(() => pushHistory(cardsRef.current, groupsRef.current),
+    [pushHistory, cardsRef, groupsRef]);
+
+  const handleNewBoard = useCallback(() => {
+    const host = window as Window & {
+      pywebview?: { api?: { new_board?: () => Promise<void> | void } };
+    };
+    if (host.pywebview?.api?.new_board) {
+      void Promise.resolve(host.pywebview.api.new_board());
+      return;
+    }
+    // Browser fallback: open an isolated session tab. The random id keeps its
+    // local draft separate from the current board.
+    const boardId = typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : String(Date.now());
+    window.open(`${window.location.origin}${window.location.pathname}?new-board=1&board-id=${boardId}`, '_blank', 'noopener');
+  }, []);
 
   const handleCanvasCommand = useCallback((command: CanvasCommand) => {
     if (canvasMenuPosition) {
@@ -587,18 +647,47 @@ export default function App() {
       case 'group': bundles.createBundle(); break;
       case 'search': setIsSearchOpen(true); break;
       case 'copy': void clipboard.handleCopy(); break;
+      case 'cut': void clipboard.handleCut(); break;
       case 'paste': void pasteFromSystemClipboard(); break;
+      case 'new-board': handleNewBoard(); break;
+      case 'open': void handleOpenDrop(); break;
+      case 'save': void handleSaveDrop(); break;
+      case 'save-as': void handleSaveDrop(true); break;
       case 'pin':
         canvasPins.openPinPrompt(
           canvasMenuPosition || mouseScreenRef.current,
           mouseWorldRef.current
         );
         break;
-      case 'fit': handleCanvasDoubleClick(canvasCards, fitGroups); break;
       case 'uniform-width': actions.handleUniformCardWidth(); break;
+      case 'auto-pack': actions.handleAutoPack(); break;
+      case 'reset-size': {
+        const id = [...selectedGroupIdsRef.current].find((groupId) =>
+          groupsRef.current.some((group) => group.id === groupId && group.kind === 'bundle'))
+          || [...selectedCardIdsRef.current][0];
+        if (id) resetObjectSize(id);
+        break;
+      }
+      case 'ungroup':
+      case 'detach':
+      case 'disconnect': {
+        pushHistory(cardsRef.current, groupsRef.current);
+        const next = applyGroupMenuAction(command, cardsRef.current, groupsRef.current,
+          selectedCardIdsRef.current, selectedGroupIdsRef.current);
+        actions.commitState(next.cards, next.groups);
+        const remaining = new Set(next.groups.map((group) => group.id));
+        setSelectedGroupIds(new Set([...selectedGroupIdsRef.current].filter((id) => remaining.has(id))));
+        break;
+      }
+      case 'ocr': handleShortcutImageOCR(); break;
+      case 'link': handleShortcutImageLink(); break;
+      case 'reparse': handleShortcutReparseLink(); break;
+      case 'settings': setIsSettingsOpen(true); break;
     }
   }, [actions, bundles, canvasCards, canvasMenuPosition, canvasPins, clipboard, fitGroups, handleCanvasDoubleClick,
-    mouseScreenRef, mouseWorldRef, pasteFromSystemClipboard, viewportRef]);
+    handleNewBoard, handleOpenDrop, handleSaveDrop, mouseScreenRef, mouseWorldRef, pasteFromSystemClipboard, viewportRef,
+    resetObjectSize, handleShortcutDetachFromBundle, handleShortcutDisconnectParent,
+    handleShortcutImageOCR, handleShortcutImageLink, handleShortcutReparseLink, pushHistory, setSelectedGroupIds]);
 
   return (
     <div
@@ -607,8 +696,13 @@ export default function App() {
         canvasInteractions.isZooming ? 'cursor-ns-resize [&_*]:!cursor-ns-resize'
           : canvasInteractions.isPanning ? 'cursor-grabbing [&_*]:!cursor-grabbing' : 'cursor-default'
       }`}
-      onWheel={handleWheel}
+      onWheel={(e) => {
+        if ((e.target as HTMLElement).closest('[data-modal="settings"]')) return;
+        handleWheel(e);
+      }}
       onWheelCapture={(e) => {
+        if ((e.target as HTMLElement).closest('[data-desktop-titlebar]')) return;
+        if ((e.target as HTMLElement).closest('[data-modal="settings"]')) return;
         if ((e.target as HTMLElement).closest('textarea, input, [contenteditable="true"]')) {
           e.stopPropagation();
           return;
@@ -619,6 +713,9 @@ export default function App() {
         }
       }}
       onMouseDownCapture={(e) => {
+        if ((e.target as HTMLElement).closest('[data-desktop-titlebar]')) return;
+        if ((e.target as HTMLElement).closest('[data-modal="settings"]')) return;
+        flushWheelZoom();
         if (clipboard.hasPendingPaste && e.button === 0 &&
           (e.target === e.currentTarget || (e.target as HTMLElement).closest('[data-canvas-surface]'))) {
           e.preventDefault();
@@ -628,6 +725,11 @@ export default function App() {
             y: (e.clientY - viewportRef.current.y) / viewportRef.current.zoom };
           mouseWorldRef.current = target;
           clipboard.commitPendingPaste(target);
+          return;
+        }
+        if (e.button === 2 && (e.target as HTMLElement).closest('[data-pin-id]')) {
+          e.preventDefault();
+          e.stopPropagation();
           return;
         }
         const object = (e.target as HTMLElement).closest('[data-card-id], [data-group-id], [data-bundle-id]');
@@ -662,38 +764,55 @@ export default function App() {
         }
       }}
       onClickCapture={(e) => {
+        if ((e.target as HTMLElement).closest('[data-desktop-titlebar]')) return;
+        if ((e.target as HTMLElement).closest('[data-modal="settings"]')) return;
         if (!suppressPasteClickRef.current) return;
         suppressPasteClickRef.current = false;
         e.preventDefault();
         e.stopPropagation();
       }}
-      onMouseDown={canvasInteractions.handleMouseDown}
+      onMouseDown={(e) => {
+        if ((e.target as HTMLElement).closest('[data-desktop-titlebar]')) return;
+        if ((e.target as HTMLElement).closest('[data-modal="settings"]')) return;
+        canvasInteractions.handleMouseDown(e);
+      }}
       onDoubleClick={(e) => {
         const target = e.target as HTMLElement;
-        if (!target.closest('[data-card-id]') && !target.closest('[data-group-id]') && !target.closest('[data-bundle-id]')) {
+        if (target.closest('[data-desktop-titlebar]')) return;
+        if (target.closest('[data-modal="settings"]')) return;
+        if (!target.closest('[data-card-id], [data-group-id], [data-bundle-id], [data-pin-id]')) {
           setIsSearchOpen(true);
         }
       }}
-      onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }}
-      onDrop={handleDrop}
+      onDragOver={(e) => {
+        if ((e.target as HTMLElement).closest('[data-desktop-titlebar]')) { e.preventDefault(); return; }
+        if ((e.target as HTMLElement).closest('[data-modal="settings"]')) return;
+        e.preventDefault(); e.dataTransfer.dropEffect = 'copy';
+      }}
+      onDrop={(e) => {
+        if ((e.target as HTMLElement).closest('[data-desktop-titlebar]')) { e.preventDefault(); return; }
+        if ((e.target as HTMLElement).closest('[data-modal="settings"]')) return;
+        handleDrop(e);
+      }}
       onContextMenu={(e) => {
         e.preventDefault();
       }}
     >
-      {new URLSearchParams(window.location.search).has('desktop') && (
-        <div className="desktop-drag-region absolute left-0 right-[140px] top-0 h-9 z-[60]" aria-hidden="true" />
-      )}
+      <DesktopWindowControls />
       {farMode && <FarCanvas cards={visibleCards} groups={visibleGroups} viewport={viewport} />}
       <div
+        ref={surfaceRef}
         data-canvas-surface
         className="absolute inset-0 origin-top-left pointer-events-auto"
         style={{
           transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`,
-          willChange: 'transform',
+          willChange: highQualityImageMode ? 'auto' : 'transform',
         }}
       >
         <CanvasPinsLayer
           pins={canvasPins.pins}
+          selectedPinIds={selectedPinIds}
+          onSelect={selectPin}
           onJump={canvasPins.jumpToPin}
           onRemove={canvasPins.removePin}
           onUpdatePosition={canvasPins.updatePinPosition}
@@ -730,7 +849,6 @@ export default function App() {
             isSelected={selectedGroupIds.has(group.id) && pressedObject !== group.id}
             childCount={getParentLinkage(cards, group.id, displayGroups).cardIds.size}
             isDragOver={dragOverGroupId === group.id}
-            tourHint={tour.isSandboxActive ? tour.tourHints[group.id] : undefined}
             onSelect={(e) => canvasInteractions.handleStartGroupDrag(group, e)}
             onRename={renameGroup}
             onUngroup={dissolveParent}
@@ -738,23 +856,28 @@ export default function App() {
         ))}
 
         {visibleCards.filter((card) => !farMode || selectedCardIds.has(card.id)).map((card) => (
-          <CardComponent
-            key={card.id}
-            card={card}
-            contentScale={card.bundleId ? bundleContentScales.get(card.bundleId) ?? 1 : 1}
-            isSelected={selectedCardIds.has(card.id)}
-            showSelectionControls={selectedCardIds.has(card.id) && pressedObject !== card.id}
-            parentHighlighted={parentHighlights.cardIds.has(card.id)}
-            tourHint={tour.isSandboxActive ? tour.tourHints[card.id] : undefined}
-            onSelect={(e) => canvasInteractions.handleStartCardDrag(card, e)}
-            onUpdate={actions.handleCardUpdate}
-            onTextEdit={actions.handleCardTextEdit}
-            onTextEditStart={() => pushHistory(cardsRef.current, groupsRef.current)}
-            onDoubleClick={handleCardDoubleClick}
-            onStartScale={(c, clientX) => canvasInteractions.handleStartCardScale(c, clientX)}
-            onStartResize={(c, handle, e) => canvasInteractions.handleStartCardResize(c, handle, e)}
-            isTinyThumbnail={!!card.bundleId && Math.min(card.width, card.height) * viewport.zoom <= 20}
-          />
+            <CardComponent
+              key={card.id}
+              card={card}
+              contentScale={card.bundleId ? bundleContentScales.get(card.bundleId) ?? 1 : 1}
+              isSelected={selectedCardIds.has(card.id)}
+              isDragging={canvasInteractions.movingCardIds.has(card.id)}
+              showSelectionControls={selectedCardIds.has(card.id) && pressedObject !== card.id}
+              parentHighlighted={parentHighlights.cardIds.has(card.id)}
+              onSelect={(e) => canvasInteractions.handleStartCardDrag(card, e)}
+              onUpdate={actions.handleCardUpdate}
+              onTextEdit={actions.handleCardTextEdit}
+              onTextEditStart={handleTextEditStart}
+              onDoubleClick={handleCardDoubleClick}
+              onStartScale={(c, clientX) => canvasInteractions.handleStartCardScale(c, clientX)}
+              onStartResize={(c, handle, e) => canvasInteractions.handleStartCardResize(c, handle, e)}
+              isTinyThumbnail={!!card.bundleId && Math.min(card.width, card.height) *
+                (isWheelZooming ? wheelLodZoom : viewport.zoom) <= 20}
+              useCanvasImage={!farMode && card.type === 'image' && !!(card.thumbnail || card.sizeLocked) && !card.title &&
+                !selectedCardIds.has(card.id) && !canvasInteractions.movingCardIds.has(card.id) && !highQualityImageMode}
+              highQualityImage={highQualityImageMode && (card.type === 'image' || card.type === 'web') && !!card.image}
+              crispRender={highQualityImageMode}
+            />
         ))}
 
         <SelectionBox box={selectionRect} />
@@ -783,11 +906,34 @@ export default function App() {
         onDisconnectGroupParent={bundles.disconnectBundleParent}
         onClosePieMenu={pieMenu.closePieMenu}
         onUniformWidth={() => actions.handleUniformCardWidth(pieMenu.activePieMenu?.selectedCardIds)}
+        onCanvasCommand={(command, target) => {
+          const id = target.kind === 'card' ? target.card.id : target.group.id;
+          if (['cut', 'copy', 'group', 'auto-pack'].includes(command)) {
+            const alreadySelected = selectedCardIdsRef.current.has(id) || selectedGroupIdsRef.current.has(id);
+            if (!alreadySelected) {
+              setSelectedPinIds(new Set());
+              selectedCardIdsRef.current = new Set(target.kind === 'card' ? [id] : []);
+              selectedGroupIdsRef.current = new Set(target.kind === 'card' ? [] : [id]);
+              setSelectedCardIds(selectedCardIdsRef.current);
+              setSelectedGroupIds(selectedGroupIdsRef.current);
+            }
+            if (command === 'auto-pack' && target.kind === 'bundle') {
+              selectedCardIdsRef.current = new Set(cardsRef.current.filter((card) => card.bundleId === id).map((card) => card.id));
+              setSelectedCardIds(selectedCardIdsRef.current);
+            }
+          }
+          mouseScreenRef.current = pieMenu.activePieMenu?.center || mouseScreenRef.current;
+          mouseWorldRef.current = {
+            x: (mouseScreenRef.current.x - viewportRef.current.x) / viewportRef.current.zoom,
+            y: (mouseScreenRef.current.y - viewportRef.current.y) / viewportRef.current.zoom,
+          };
+          handleCanvasCommand(command);
+        }}
         isSearchOpen={isSearchOpen}
         onCloseSearch={() => setIsSearchOpen(false)}
         onSelectSearchCard={(c) => {
           if (c.bundleId && collapsedIds.has(c.bundleId)) bundles.toggleBundle(c.bundleId);
-          setSelectedCardIds(new Set([c.id]));
+          selectCard(c.id, false);
           setViewport(computeCardFocusViewport(c, window.innerWidth, window.innerHeight));
         }}
         isMinimapExpanded={minimap.isMinimapExpanded}
@@ -796,8 +942,13 @@ export default function App() {
       {clipboard.pendingPaste && <ClipboardPastePreview snapshot={clipboard.pendingPaste}
         screen={clipboard.pasteScreenPosition} zoom={viewport.zoom} />}
       {canvasMenuPosition && <CanvasCommandMenu position={canvasMenuPosition}
-        canCopy={selectedCardIds.size > 0 || selectedGroupIds.size > 0}
-        canPaste={clipboard.copiedObjectsRef.current.cards.length + clipboard.copiedObjectsRef.current.groups.length > 0}
+        canCopy={selectedCardIds.size > 0 || selectedGroupIds.size > 0 || selectedPinIds.size > 0}
+        canGroup={selectedCardIds.size > 0}
+        canUngroup={selectedGroupIds.size > 0}
+        canResetSize={selectedCardIds.size > 0 || groups.some((group) => selectedGroupIds.has(group.id) && group.kind === 'bundle')}
+        canDetach={cards.some((card) => selectedCardIds.has(card.id) && !!card.bundleId)}
+        canDisconnect={cards.some((card) => selectedCardIds.has(card.id) && !!card.groupId)
+          || groups.some((group) => selectedGroupIds.has(group.id) && !!group.parentIds?.length)}
         canUniformWidth={cards.length > 1}
         onCommand={handleCanvasCommand}
         onClose={() => setCanvasMenuPosition(null)} />}
@@ -809,64 +960,6 @@ export default function App() {
           onClose={canvasPins.closePinPrompt}
         />
       )}
-      {pieMenu.resolutionPanel && resolutionCard && (
-        <ReverseResolutionPanel card={resolutionCard} viewport={viewport}
-          resolution={pieMenu.resolutionPanel.resolution}
-          onClose={pieMenu.closeResolutionPanel}
-          onConfirm={pieMenu.handleConfirmCandidate} />
-      )}
-      <FpsMeter
-        enabled={settings.general.showFps}
-        onToggle={() => updateGeneral({ showFps: !settings.general.showFps })}
-      />
-      <div className="fixed right-3 top-3 z-[115] flex items-center gap-2">
-        <PerformanceHUD
-          enabled={settings.general.showFps}
-          cardsCount={cards.length}
-          visibleCardsCount={visibleCards.length}
-        />
-        {recognitionReports.length > 0 && !diagnosticsOpen && (
-          <button type="button" onClick={() => setDiagnosticsOpen(true)}
-            className="border border-ink bg-paper px-3 py-1.5 text-xs font-bold text-ink hover:bg-ink hover:text-paper transition-colors cursor-pointer rounded-[10px]">
-            识别记录 {recognitionReports.length}
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={() => tour.setIsHandbookOpen(true)}
-          title="核心操作与功能教程"
-          className="border border-ink bg-paper px-3 py-1.5 text-xs font-bold text-ink hover:bg-ink hover:text-paper transition-colors cursor-pointer rounded-[10px] flex items-center gap-1"
-        >
-          <span>?</span>
-          <span>教程</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => setIsSettingsOpen(true)}
-          title="设置 (Ctrl+,)"
-          className="border border-ink bg-paper px-3 py-1.5 text-xs font-bold text-ink hover:bg-ink hover:text-paper transition-colors cursor-pointer rounded-[10px]"
-        >
-          ⚙ 设置
-        </button>
-      </div>
-      {tour.isSandboxActive && (
-        <TourMinimalPrompt
-          promptText={tour.promptText}
-          shortcutText={tour.shortcutText}
-          isCompleted={tour.isCompleted}
-          onExit={tour.exitTour}
-          onSkipStep={tour.skipToNextStage}
-        />
-      )}
-      <TourHandbookModal
-        isOpen={tour.isHandbookOpen}
-        onClose={() => tour.setIsHandbookOpen(false)}
-        onStartInteractiveSandbox={tour.startTourSandbox}
-      />
-      {diagnosticsOpen && <RecognitionDiagnostics reports={recognitionReports}
-        activeReviewCardId={pieMenu.resolutionPanel?.cardId}
-        onConfirmCandidate={pieMenu.handleConfirmCandidate}
-        onClose={() => setDiagnosticsOpen(false)} />}
       <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
@@ -874,16 +967,11 @@ export default function App() {
         onUpdateShortcuts={updateShortcuts}
         onUpdateGeneral={updateGeneral}
         onResetShortcuts={resetShortcuts}
-        cards={cards}
-        groups={displayGroups}
-        viewport={viewport}
-        pins={canvasPins.pins}
-        onImportComplete={handleImportComplete}
+        onRestoreWorkspace={handleRestoreWorkspace}
         showToast={showToast}
-        onOpenTour={() => tour.setIsHandbookOpen(true)}
       />
       {toast && <div role="status" aria-live="polite"
-        className="fixed bottom-6 left-1/2 z-[120] max-w-[min(90vw,480px)] -translate-x-1/2 border border-ink bg-paper px-4 py-3 text-center text-xs text-ink shadow-xl pointer-events-none">
+        className="fixed bottom-6 left-1/2 z-[160] max-w-[min(90vw,640px)] -translate-x-1/2 border border-ink bg-paper px-4 py-3 text-center text-xs text-ink shadow-xl whitespace-pre-line break-words pointer-events-none">
         {toast}
       </div>}
     </div>

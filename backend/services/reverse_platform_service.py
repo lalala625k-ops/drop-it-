@@ -1,4 +1,4 @@
-"""Focused reverse lookups adapted from the reference project's platform resolvers."""
+"""Focused reverse lookups for supported content platforms."""
 
 import html
 import re
@@ -17,7 +17,7 @@ def _compact(value: str) -> str:
 
 
 def _same_title(expected: str, candidate: str) -> bool:
-    """Require the reference resolver's continuous phrase plus strong total similarity."""
+    """Require a continuous phrase plus strong total similarity."""
     left, right = _compact(expected), _compact(candidate)
     if len(left) < 8 or len(right) < 8:
         return False
@@ -35,7 +35,7 @@ def _official(url: str, domain: str, path: str) -> str | None:
 
 
 def _wechat(title: str, author: str, proxies: dict | None) -> str | None:
-    # Reference: WechatResolver.generate_query_candidates + Sogou JS redirect unpacking.
+    # Generate WeChat query candidates and unpack Sogou JavaScript redirects.
     clauses = [part for part in re.split(r"[，,。；;：:!！?？|—\-_]+", title) if len(_compact(part)) >= 3]
     queries = []
     if len(clauses) >= 2:
@@ -78,7 +78,7 @@ def _wechat(title: str, author: str, proxies: dict | None) -> str | None:
 
 
 def _sspai(title: str, author: str, proxies: dict | None) -> str | None:
-    # Reference: SspaiResolver.search_exact_post uses the site's article search API.
+    # Use the site's article search API for exact Sspai article matches.
     segments = [part.strip() for part in re.split(r"[:：,，_—\-]+", title) if len(_compact(part)) >= 4]
     queries = list(dict.fromkeys([title[:30], *(part[:20] for part in segments[:1])]))
     for query in queries:

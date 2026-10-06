@@ -1,4 +1,4 @@
-"""Run the imported platform resolvers under the board's direct-link contract."""
+"""Run platform resolvers under the board's direct-link contract."""
 
 import re
 from urllib.parse import parse_qs, urlparse
@@ -42,7 +42,7 @@ def _candidate_title(url: str, proxies: dict | None) -> str:
 
 def recover_imported_link(platform: str, title: str, author: str, text: str,
                           domain: str, proxies: dict | None, found_id: str = "") -> str | None:
-    """Dispatch all imported resolvers; reject their search-page fallback results."""
+    """Dispatch platform resolvers; reject search-page fallback results."""
     try:
         if platform == "bilibili":
             resolver = BilibiliResolver()
@@ -87,6 +87,12 @@ def recover_imported_link(platform: str, title: str, author: str, text: str,
         return None
     if result.matched_method == "direct_url_in_image":
         return url if url in text else None
+    # WeChat's Sogou resolver already matched the article title before
+    # unpacking the signed mp.weixin.qq.com redirect. Fetching that signed
+    # URL again often returns an anti-bot page, which used to discard a valid
+    # result and incorrectly fall through to Bing domain search.
+    if result.matched_method in {"wechat_direct", "wechat_url_direct"}:
+        return url
     if result.matched_method in {"bvid_direct", "bvid_regex", "tweet_id_direct", "youtube_id_direct",
                                  "feishu_doc_direct", "zhihu_id_direct", "sspai_id_direct", "thepaper_id_direct"}:
         # A visible identifier or URL is sufficient; inferred IDs are not.

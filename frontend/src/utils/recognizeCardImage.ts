@@ -133,7 +133,7 @@ export async function recognizeCardImage(card: Card, mode: ImageRecognitionMode,
     const width = 260;
     const height = 180;
     return { kind: 'converted', outcome: 'text', updates: {
-      type: 'text', content: text, title: undefined, image: undefined, url: undefined,
+      type: 'text', content: text, title: undefined, image: undefined, thumbnail: undefined, url: undefined,
       description: undefined, favicon: undefined, isParsing: false,
       width, height, x: card.x + (card.width - width) / 2, y: card.y + (card.height - height) / 2,
     } };
@@ -160,10 +160,16 @@ export async function buildLinkCardUpdates(card: Card, url: string, fallbackTitl
     url: `${window.location.origin}/api/fetch-metadata`, port: Number(window.location.port) || 80 }); }
   const width = 280;
   const size = metadata.image ? await previewSize(metadata.image) : null;
+  onDiagnostic?.({ name: 'cover', status: size ? 'completed' : metadata.image ? 'failed' : 'no_results',
+    detail: size ? '已加载原网页封面，并清除上传截图的旧缩略图'
+      : metadata.image ? '原网页封面加载失败，转换为无图网页卡片'
+        : '原网页未返回封面，转换为无图网页卡片' });
   const height = size ? Math.round(width * size.height / size.width + 68) : 90;
   return {
     type: 'web', url, title: metadata.title || fallbackTitle || url,
     image: size ? metadata.image : '',
+    // The screenshot thumbnail belongs to the previous image, not the page cover.
+    thumbnail: undefined,
     description: metadata.description || text,
     favicon: metadata.favicon || '', content: text, isParsing: false,
     width, height, x: card.x + (card.width - width) / 2, y: card.y + (card.height - height) / 2,

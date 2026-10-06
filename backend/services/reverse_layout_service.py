@@ -1,4 +1,4 @@
-"""OCR geometry extraction copied from the reference VisionEngine."""
+"""OCR geometry extraction helpers."""
 
 import math
 import re

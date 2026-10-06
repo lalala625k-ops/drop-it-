@@ -7,7 +7,7 @@ const names: Record<string, string> = {
   routing: '平台分发', platform_correction: '平台特征纠偏',
   model_request: '模型接口', site_request: '站内接口', site_results: '站内结果', site_search: '站内搜索',
   domain_request: '定向搜索接口', domain_results: '搜索结果筛选', domain_search: '定向搜索',
-  verification: '候选核验', api_request: '前端请求', metadata: '网页元数据',
+  verification: '候选核验', api_request: '前端请求', metadata: '网页元数据', cover: '原网页封面',
   manual_confirmation: '手动确认', client: '页面处理',
 };
 

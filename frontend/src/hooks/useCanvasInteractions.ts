@@ -109,6 +109,7 @@ export function useCanvasInteractions({
   const [isPanning, setIsPanning] = useState(false);
   const [isZooming, setIsZooming] = useState(false);
   const [interactiveWire, setInteractiveWire] = useState<InteractiveWire | null>(null);
+  const [movingCardIds, setMovingCardIds] = useState<Set<string>>(new Set());
 
   const dragModeRef = useRef<DragMode>(null);
   const draggingGroupIdRef = useRef<string | null>(null);
@@ -265,9 +266,8 @@ export function useCanvasInteractions({
           width: Math.abs(currentWorld.x - dragStartRef.current.worldX),
           height: Math.abs(currentWorld.y - dragStartRef.current.worldY),
         };
-        const collapsedIds = new Set(groupsRef.current.filter((group) => group.kind === 'bundle' && group.collapsed).map((group) => group.id));
         const isCtrl = e.ctrlKey || e.metaKey;
-        updateMarqueeSelection(rect, cardsRef.current.filter((card) => !card.bundleId || !collapsedIds.has(card.bundleId)), groupsRef.current, isCtrl);
+        updateMarqueeSelection(rect, cardsRef.current, groupsRef.current, isCtrl);
         return;
       }
 
@@ -388,6 +388,7 @@ export function useCanvasInteractions({
       if (dragModeRef.current && dragModeRef.current !== 'zoom') applyGlobalMouseMove(e);
       const mode = dragModeRef.current;
       dragModeRef.current = null;
+      setMovingCardIds((previous) => previous.size ? new Set() : previous);
       if (mode === 'pan' && panPreview) {
         if (panCommitTimer !== null) window.clearTimeout(panCommitTimer);
         panCommitTimer = null;
@@ -616,6 +617,7 @@ export function useCanvasInteractions({
       });
       draggingCardBranchIdsRef.current = branchCardIds;
       draggingCardBranchBundleIdsRef.current = branchBundleIds;
+      setMovingCardIds(new Set(branchCardIds));
       initDragCards(cardsRef.current.filter((c) => branchCardIds.has(c.id)));
     },
     [cardsRef, groupsRef, initDragCards, pushHistory, selectCard, selectedCardIdsRef, viewportRef]
@@ -660,17 +662,25 @@ export function useCanvasInteractions({
       draggingGroupIdsRef.current.add(group.id);
       draggingSelectedCardIdsRef.current = new Set(!isolatedDragRef.current && (e.shiftKey || groupDragWasSelectedRef.current)
         ? selectedCardIdsRef.current : []);
+      const moving = new Set(draggingSelectedCardIdsRef.current);
+      if (!isolatedDragRef.current) {
+        for (const id of draggingGroupIdsRef.current) {
+          const linked = getParentLinkage(cardsRef.current, id, groupsRef.current);
+          linked.cardIds.forEach((cardId) => moving.add(cardId));
+          cardsRef.current.filter((card) => card.bundleId === id).forEach((card) => moving.add(card.id));
+        }
+      }
+      setMovingCardIds(moving);
       hasGroupDraggedRef.current = false;
       dragStartCardsRef.current = cardsRef.current;
       dragStartGroupsRef.current = groupsRef.current;
       pushHistory(cardsRef.current, groupsRef.current);
       if (e.shiftKey) setSelectedGroupIds(new Set(draggingGroupIdsRef.current));
       else if (!groupDragWasSelectedRef.current) {
-        setSelectedCardIds(new Set());
-        setSelectedGroupIds(new Set([group.id]));
+        selectGroup(group.id, false);
       }
     },
-    [cardsRef, groupsRef, pushHistory, selectedGroupIdsRef, setSelectedCardIds, setSelectedGroupIds, viewportRef]
+    [cardsRef, groupsRef, pushHistory, selectedGroupIdsRef, selectedCardIdsRef, selectGroup, setSelectedCardIds, setSelectedGroupIds, viewportRef]
   );
 
   const handleStartCardScale = useCallback(
@@ -696,6 +706,7 @@ export function useCanvasInteractions({
     isPanning,
     isZooming,
     interactiveWire,
+    movingCardIds,
     dragStartRef,
     handleMouseDown,
     handleStartCardDrag,

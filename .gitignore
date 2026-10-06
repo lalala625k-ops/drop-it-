@@ -13,7 +13,6 @@ release-bin/
 *.spec
 backend/dist/
 backend/build/
-src-tauri/target/
 
 # Python cache & virtual environments
 __pycache__/
@@ -29,6 +28,21 @@ env/
 *.note
 *.local.json
 *.local.csv
+*.lnk
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.db
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+*.drop
+!desktop/Template/Template一.drop
 .DS_Store
 Thumbs.db
 
@@ -39,6 +53,7 @@ Thumbs.db
 
 # Notes database (tracked and backed up independently in Date-of-my-note repo)
 backend/data/
+Files/
 
 # Local mobile inbox content
 mobile_sync_sandbox/inbox_data/

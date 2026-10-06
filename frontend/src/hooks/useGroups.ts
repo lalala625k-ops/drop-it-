@@ -18,7 +18,7 @@ export function useGroups(initialGroups: Group[] = []) {
       const groupNum = groupsRef.current.length + 1;
       const newParent: Group = {
         id: `parent-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        title: title || `父物体 ${groupNum}`,
+        title: title || `原点 ${groupNum}`,
         x: Math.round(x),
         y: Math.round(y),
         width,
@@ -80,7 +80,7 @@ export function useGroups(initialGroups: Group[] = []) {
 
       const newGroup: Group = {
         id: `parent-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        title: `父物体 ${groupNum}`,
+        title: `原点 ${groupNum}`,
         x: Math.round(cx - size / 2),
         y: Math.round(cy - size / 2),
         width: size,

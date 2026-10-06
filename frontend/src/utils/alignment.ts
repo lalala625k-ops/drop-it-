@@ -17,18 +17,18 @@ export interface AlignItem {
  * 物理非重叠对齐算法（麻将牌推挤模型）
  *
  * 类似固定刚体麻将块沿着指定方向推移：
- * - 覆盖卡片（Card）与父物体（Group），两类物体均参与双向物理碰撞检测，杜绝任何重叠；
- * - 向左对齐：所有选定卡片与父物体向左挪动，遇到左边界或前序卡片/父物体碰撞时停止，保留 5px 物理间距；
- * - 向右对齐：所有选定卡片与父物体向右挪动，遇到右边界或后序卡片/父物体碰撞时停止，保留 5px 物理间距；
- * - 向上对齐：所有选定卡片与父物体向上挪动，遇到上边界或上方卡片/父物体碰撞时停止，保留 5px 物理间距；
- * - 向下对齐：所有选定卡片与父物体向下挪动，遇到下边界或下方卡片/父物体碰撞时停止，保留 5px 物理间距。
+ * - 覆盖卡片（Card）与原点（Group），两类物体均参与双向物理碰撞检测，杜绝任何重叠；
+ * - 向左对齐：所有选定卡片与原点向左挪动，遇到左边界或前序卡片/原点碰撞时停止，保留 5px 物理间距；
+ * - 向右对齐：所有选定卡片与原点向右挪动，遇到右边界或后序卡片/原点碰撞时停止，保留 5px 物理间距；
+ * - 向上对齐：所有选定卡片与原点向上挪动，遇到上边界或上方卡片/原点碰撞时停止，保留 5px 物理间距；
+ * - 向下对齐：所有选定卡片与原点向下挪动，遇到下边界或下方卡片/原点碰撞时停止，保留 5px 物理间距。
  *
  * @param cardsToAlign 待对齐的卡片集合
  * @param direction 对齐方向
  * @param allCards 画布上所有卡片
  * @param gap 碰撞阻挡后的间距（默认 5px）
- * @param groupsToAlign 待对齐的父物体集合
- * @param allGroups 画布上所有父物体
+ * @param groupsToAlign 待对齐的原点集合
+ * @param allGroups 画布上所有原点
  */
 export function alignCards(
   cardsToAlign: Card[],
@@ -40,7 +40,7 @@ export function alignCards(
 ): Map<string, { x: number; y: number }> {
   const result = new Map<string, { x: number; y: number }>();
 
-  // 统一转为移动项结构（卡片 + 父物体）
+  // 统一转为移动项结构（卡片 + 原点）
   const movingItems: AlignItem[] = [
     ...cardsToAlign.map((c) => ({
       id: c.id,
@@ -60,7 +60,7 @@ export function alignCards(
 
   if (movingItems.length === 0) return result;
 
-  // 画布上未被选中的卡片与父物体作为不可穿透的固定障碍物
+  // 画布上未被选中的卡片与原点作为不可穿透的固定障碍物
   const movingIds = new Set(movingItems.map((i) => i.id));
   const fixedObstacles: AlignItem[] = [
     ...(allCards || [])
@@ -91,7 +91,7 @@ export function alignCards(
         movingItems.length > 1
           ? Math.min(...movingItems.map((i) => i.x))
           : Math.min(...allItems.map((i) => i.x));
-      // 升序排列：最左侧的麻将块（卡片或父物体）优先结算就位
+      // 升序排列：最左侧的麻将块（卡片或原点）优先结算就位
       const sorted = [...movingItems].sort((a, b) => {
         if (a.x !== b.x) return a.x - b.x;
         return a.y - b.y;
@@ -103,7 +103,7 @@ export function alignCards(
         while (collided) {
           collided = false;
           for (const obs of placedObstacles) {
-            // Y 轴区间存在垂直投影重叠（卡片与父物体互检）
+            // Y 轴区间存在垂直投影重叠（卡片与原点互检）
             if (Math.max(item.y, obs.y) < Math.min(item.y + item.height, obs.y + obs.height)) {
               // 检查水平方向是否碰撞
               if (targetX < obs.x + obs.width + gap && targetX + item.width + gap > obs.x) {

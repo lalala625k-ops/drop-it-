@@ -9,10 +9,12 @@ export function FarCanvas({ cards, groups, viewport }: Props) {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ratio = Math.min(window.devicePixelRatio || 1, 2);
-    canvas.width = Math.round(window.innerWidth * ratio);
-    canvas.height = Math.round(window.innerHeight * ratio);
-    canvas.style.width = `${window.innerWidth}px`;
-    canvas.style.height = `${window.innerHeight}px`;
+    const pixelWidth = Math.round(window.innerWidth * ratio);
+    const pixelHeight = Math.round(window.innerHeight * ratio);
+    if (canvas.width !== pixelWidth) canvas.width = pixelWidth;
+    if (canvas.height !== pixelHeight) canvas.height = pixelHeight;
+    if (canvas.style.width !== `${window.innerWidth}px`) canvas.style.width = `${window.innerWidth}px`;
+    if (canvas.style.height !== `${window.innerHeight}px`) canvas.style.height = `${window.innerHeight}px`;
     const context = canvas.getContext('2d');
     if (!context) return;
     context.setTransform(ratio, 0, 0, ratio, 0, 0);

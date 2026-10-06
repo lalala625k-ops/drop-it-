@@ -1,16 +1,11 @@
 import { useState, useCallback, useRef, useEffect, MutableRefObject } from 'react';
-import { Viewport } from '../types';
+import { CanvasPin, Viewport } from '../types';
+import { browserBoardId } from '../utils/workspaceApi';
 
-export interface CanvasPin {
-  id: string;
-  index: number; // 1 to 8
-  x: number;
-  y: number;
-  zoom?: number;
-  createdAt: number;
-}
+export type { CanvasPin } from '../types';
 
-const STORAGE_KEY = 'pinboard_canvas_pins_v1';
+const boardId = new URLSearchParams(location.search).get('board-id');
+const STORAGE_KEY = `pinboard_canvas_pins_v1${boardId ? `_${boardId}` : ''}`;
 
 function loadSavedPins(): CanvasPin[] {
   try {
@@ -28,6 +23,7 @@ function savePins(pins: CanvasPin[]) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(pins));
   } catch { /* ignore */ }
+  if (browserBoardId) return;
   try {
     fetch('/api/cards/pins', {
       method: 'POST',
@@ -45,43 +41,14 @@ interface UseCanvasPinsProps {
 
 export function useCanvasPins({ viewportRef, setViewport, showToast }: UseCanvasPinsProps) {
   const [pins, setPins] = useState<CanvasPin[]>(loadSavedPins);
+  const pinsRef = useRef(pins);
+  pinsRef.current = pins;
   const [pinPrompt, setPinPrompt] = useState<{
     screen: { x: number; y: number };
     world: { x: number; y: number };
   } | null>(null);
 
-  // Auto-sync pins with backend on mount across different browsers and desktop
-  useEffect(() => {
-    fetch('/api/cards/pins')
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (data && Array.isArray(data.pins)) {
-          const serverPins: CanvasPin[] = data.pins;
-          setPins((prev) => {
-            if (prev.length > 0 && serverPins.length === 0) {
-              // Local has pins but server is empty: sync local to server
-              savePins(prev);
-              return prev;
-            }
-            if (serverPins.length > 0 && prev.length === 0) {
-              // Server has pins but local is empty (e.g. desktop app opened): load server pins
-              try { localStorage.setItem(STORAGE_KEY, JSON.stringify(serverPins)); } catch {}
-              return serverPins;
-            }
-            if (serverPins.length > 0) {
-              const pinMap = new Map<number, CanvasPin>();
-              for (const p of prev) pinMap.set(p.index, p);
-              for (const p of serverPins) pinMap.set(p.index, p);
-              const merged = Array.from(pinMap.values()).sort((a, b) => a.index - b.index);
-              try { localStorage.setItem(STORAGE_KEY, JSON.stringify(merged)); } catch {}
-              return merged;
-            }
-            return prev;
-          });
-        }
-      })
-      .catch(() => {});
-  }, []);
+  // Startup restores pins together with cards and viewport in useCanvasInit.
 
   const animFrameRef = useRef<number | null>(null);
 
@@ -185,12 +152,14 @@ export function useCanvasPins({ viewportRef, setViewport, showToast }: UseCanvas
   }, []);
 
   const replacePins = useCallback((newPins: CanvasPin[]) => {
+    pinsRef.current = newPins;
     setPins(newPins);
     savePins(newPins);
   }, []);
 
   return {
     pins,
+    pinsRef,
     pinPrompt,
     openPinPrompt,
     closePinPrompt,

@@ -1,6 +1,6 @@
 @echo off
 setlocal
-title Infinite Canvas Note - Desktop
+title DropIt - Desktop
 echo ========================================================
 echo       Infinite Canvas Note - Native Desktop App
 echo ========================================================
