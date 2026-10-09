@@ -96,6 +96,8 @@
   2. 提取 OpenGraph 元数据，并启动**原图品质升频引擎**：将 CDN 缩略路径 `/736x/` 替换为 `/originals/` 并校验可达性，优先输出未被压缩的 100% 原始设计素材图；
   3. 卡片根据图片自然高宽比自适应拉伸高度，完美呈现 Pinterest 常见的修长瀑布流灵感图。
 
+- **拖拽摄入补充（2026-10-08）**：从 Pinterest 公开网页客户端脚本核对，大图拖拽使用 `application/x-pinterest-closeup-image`，部分瀑布流拖拽使用 `application/x-pinterest-pinrep` 或 `pinterest-pin:编号`。前端 `pinterestTransfer.ts` 读取其中的 `pinId` 与可信 `previewImageUrl`，把编号还原成详情页 URL，调用既有 P-004 链路；不修改保护库元数据/原图解析逻辑，也不猜测 CDN 图片对应的 Pin 编号。当前核验覆盖公开客户端代码与应用侧拖入，登录页面的实际拖拽仍需用户页面验证。
+
 ---
 
 ### 🔒 规则 P-005: X / Twitter

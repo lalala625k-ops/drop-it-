@@ -73,6 +73,7 @@
 | `storage.ts` | 首次读取随包 `.drop` 示例（浏览器保留内置示例兜底）、立即写入带待同步标记的 LocalStorage、400ms 防抖及按对象修订号同步、刷新恢复，以及 `.drop` 工作区保存/读取 |
 | `pendingImages.ts` | 在 IndexedDB 按卡片 ID 暂存原始图片，刷新时恢复因 LocalStorage 容量限制剥离的 Base64 图片 |
 | `ingestScreenshot.ts` | 粘贴/拖入图片时立即建卡并暂存原图；上传后确认资源地址可解码才替换本地原图，不可读时保留原图和 IndexedDB 副本 |
+| `pinterestTransfer.ts` | 读取 Pinterest 大图/瀑布流的专用拖拽 MIME 和 `pinterest-pin:` 文本，校验 Pin 编号并还原详情页 URL；只接受 Pinterest CDN 的 HTTPS 预览图，忽略追踪字段，由 `useClipboardPaste.ts` 继续解析并在元数据失败时保留可读预览图 |
 | `recognizeCardImage.ts` | 图片卡右键 OCR/原链接识别请求及转换字段；收集接口阶段记录，原链接未命中时保留图片 |
 | `manualSearch.ts` | 前端手动搜索链接兜底 |
 
@@ -87,7 +88,7 @@
 | `useCanvasInteractions.ts` | 鼠标手势状态机：平移、Alt+中键指针锚定连续缩放、框选、拖动、Ctrl+Shift 引线连接或单击断开、卡片缩放、轮盘；卡片与外层 Group 可连到卡片、Group 或圆形原点，拒绝成环；普通拖动带动自身后代，Ctrl 拖动只移动当前对象（Group 含成员） |
 | `useCanvasActions.ts` | 新建、更新、删除、解散、编组、撤销、装箱、方向对齐、组外卡片恢复默认尺寸及全部卡片按平均宽度统一宽度；选中外层 Group 时展开成员卡片参与对齐，重算并保存组边界；`commitState` 更新卡片/原点并排队保存 |
 | `useCanvasInit.ts` | 加载时把旧多父关系收敛为单父树，修正 Group 成员的文字缩放比例，保持旧原点中心并统一尺寸为 120px；恢复视口或全览；注册关闭前刷新 |
-| `useCanvasDrop.ts` | 处理首个拖入图片文件、JSON 备份，或将外部图片 URL、网页链接和文本交给共用摄入流程 |
+| `useCanvasDrop.ts` | 同步设置拖入落点，把 DataTransfer 交给共用摄入流程；站点专用数据优先于同时携带的图片文件 |
 | `useSelection.ts` | 卡片、外层 Group、原点与图钉选中集合，Shift 选择、清空及框选；几何判定在 `marqueeSelection.ts`，普通框选支持所有类型，展开 Group 内的小范围框选保留单独成员选择，收起组使用完整成员列表计算高度 |
 | `useCardDrag.ts` | 拖动初始坐标与位移、单卡 Shift+Space 磁吸及连接目标检测；普通拖动联动下级分支、Ctrl/Cmd 仅移动当前对象由 `useCanvasInteractions.ts` 处理 |
 | `useBundleGroups.ts` | 外层 Group 的无名无色创建、包含成员悬浮标题的凸包轮廓与动态边界、收起/展开、整体拖动与四角等比缩放；所有成员内容随组缩放，恢复默认大小按组中心复位所有成员；拖动卡片松手时按中心点由外跨入轮廓/收起列表判断入组；指定原点的整组断线及解散；变更走历史与防抖保存 |
@@ -144,7 +145,8 @@
 | `PieDateInputModal.tsx` | 日期输入、解析校验、保存和清除 |
 | `PieTagModal.tsx` | 标签检索、新标签输入和勾选切换 |
 | `PieTitleInputModal.tsx` | 悬浮标题输入/清除，保留 Markdown 字符并提示原标题 |
-| `DesktopWindowControls.tsx` | 桌面 `desktop=1` 模式下的顶部悬停标题栏、拖动期间保持显示、双击最大化/还原及常驻窗口按钮；左键拖动事件向上传至 pywebview 的 body 监听器，`App.tsx` 对 `data-desktop-titlebar` 跳过画布交互，显隐样式位于 `index.css` |
+| `DesktopWindowControls.tsx` | 桌面 `desktop=1` 模式下的顶部悬停标题栏、原生移动/调整大小热区、拖动期间保持显示、双击最大化/还原及常驻窗口按钮；`App.tsx` 对 `data-desktop-titlebar` 跳过画布交互，显隐和边缘热区样式位于 `index.css` |
+| `desktop/window_chrome.py` | Windows 原生窗口子类：恢复无边框窗口的 `WS_THICKFRAME`、四边/四角 `WM_NCHITTEST`、最小尺寸与最大化边界，并把标题栏拖动交给 `WM_NCLBUTTONDOWN/HTCAPTION` 以启用系统 Snap |
 | `FpsMeter.tsx`、`PerformanceHUD.tsx` | 保留的性能调试组件；当前 App 不挂载，不显示在前端工具栏 |
 
 ## 4. 后端文件职责（`backend/`）

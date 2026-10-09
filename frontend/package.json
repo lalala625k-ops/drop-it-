@@ -6,7 +6,8 @@
   "scripts": {
     "build": "tsc && node build.mjs",
     "test:clipboard": "node --test tests/canvasClipboard.test.mjs",
-    "test:menus": "node --test tests/radialMenu.test.mjs"
+    "test:menus": "node --test tests/radialMenu.test.mjs",
+    "test:pinterest": "node --test tests/pinterestTransfer.test.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",

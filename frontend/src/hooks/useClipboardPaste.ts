@@ -4,6 +4,7 @@ import { CanvasClipboardSnapshot, normalizeClipboardText } from '../utils/canvas
 import { CANVAS_CLIPBOARD_MIME, hasCanvasClipboardPayload, readClipboardSnapshot } from '../utils/canvasClipboardTransport';
 import { ingestScreenshot } from '../utils/ingestScreenshot';
 import { isFeishuUrl, FEISHU_LOGO_URLS } from '../utils/feishu';
+import { readPinterestTransfer } from '../utils/pinterestTransfer';
 
 interface UseClipboardPasteProps {
   createCardAtCursor: (cardData: Partial<Card>) => Card;
@@ -37,12 +38,13 @@ export function useClipboardPaste({
         showToast?.('便签数据读取失败，请重新复制');
         return;
       }
-      const rawText = normalizeClipboardText(clipboardData.getData('text/plain') || clipboardData.getData('text/uri-list'));
+      const pinterest = readPinterestTransfer(clipboardData);
+      const rawText = pinterest?.url || normalizeClipboardText(clipboardData.getData('text/plain') || clipboardData.getData('text/uri-list'));
 
       const items = Array.from(clipboardData.items);
       const imageItem = items.find((item) => item.type.startsWith('image/'));
-      const file = imageItem?.getAsFile() || Array.from(clipboardData.files).find((item) =>
-        item.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|avif|svg)$/i.test(item.name));
+      const file = !pinterest && (imageItem?.getAsFile() || Array.from(clipboardData.files).find((item) =>
+        item.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|avif|svg)$/i.test(item.name)));
       const text = rawText;
       const html = clipboardData.getData('text/html');
       if (!file && !text && !html) return;
@@ -63,7 +65,7 @@ export function useClipboardPaste({
       // Images dragged from a browser often arrive as a URL or an HTML <img>.
       let imageUrl = '';
       const directUrl = text.match(/^https?:\/\/\S+$/i)?.[0] || '';
-      if (html) {
+      if (html && !pinterest) {
         try {
           const doc = new DOMParser().parseFromString(html, 'text/html');
           const source = doc.querySelector('img[src]')?.getAttribute('src') || '';
@@ -153,7 +155,29 @@ export function useClipboardPaste({
           height: 200,
           isParsing: true,
           favicon: feishu ? FEISHU_LOGO_URLS[0] : undefined,
+          image: pinterest?.image,
         });
+
+        const keepPinterestPreview = (updates: Partial<Card> = {}) => {
+          if (!pinterest?.image) return false;
+          const preview = new Image();
+          let finished = false;
+          const finish = (readable: boolean) => {
+            if (finished) return;
+            finished = true;
+            clearTimeout(timer);
+            updateCard(created.id, { ...updates, image: readable ? pinterest.image : '',
+              height: readable ? Math.round(created.width * preview.naturalHeight / preview.naturalWidth + 68) : 90,
+              isParsing: false });
+            if (!readable) showToast?.('链接已添加，预览图暂不可读');
+          };
+          const timer = setTimeout(() => finish(false), 10000);
+          preview.referrerPolicy = 'no-referrer';
+          preview.onload = () => finish(!!preview.naturalWidth && !!preview.naturalHeight);
+          preview.onerror = () => finish(false);
+          preview.src = pinterest.image;
+          return true;
+        };
 
         try {
           const res = await fetch(`/api/fetch-metadata?url=${encodeURIComponent(targetUrl)}`, {
@@ -195,6 +219,8 @@ export function useClipboardPaste({
               const finishWithoutImage = () => {
                 if (isHandled) return;
                 isHandled = true;
+                if (keepPinterestPreview({ title: finalTitle, description: meta.description || '',
+                  favicon: meta.favicon || '' })) return;
                 updateCard(created.id, {
                   title: finalTitle,
                   image: '',
@@ -212,6 +238,8 @@ export function useClipboardPaste({
               // A stalled image request should end as a failed load, not as a successful preview.
               setTimeout(finishWithoutImage, 10000);
             } else {
+              if (keepPinterestPreview({ title: finalTitle, description: meta.description || '',
+                favicon: meta.favicon || '' })) return;
               updateCard(created.id, {
                 title: finalTitle,
                 image: '',
@@ -223,11 +251,13 @@ export function useClipboardPaste({
               showToast?.('页面未提供头图');
             }
           } else {
+            if (keepPinterestPreview()) return;
             updateCard(created.id, { isParsing: false, height: 90 });
             showToast?.('链接已添加，元数据解析失败；请检查后端服务');
           }
         } catch (err) {
           console.warn('Metadata fetch failed:', err);
+          if (keepPinterestPreview()) return;
           updateCard(created.id, { isParsing: false, height: 90 });
           showToast?.('链接已添加，元数据解析失败；请检查后端服务');
         }

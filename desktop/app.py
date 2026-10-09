@@ -119,6 +119,7 @@ class WindowApi:
         # makes the host hang during API injection.
         self._window = None
         self._maximized = False
+        self._chrome = None
 
     def minimize(self):
         if self._window:
@@ -127,12 +128,23 @@ class WindowApi:
     def toggle_maximize(self):
         if not self._window:
             return
-        if self._maximized:
+        if self.get_window_state()['maximized']:
             self._window.restore()
             self._maximized = False
         else:
             self._window.maximize()
             self._maximized = True
+
+    def get_window_state(self):
+        return {'maximized': self._chrome.is_maximized() if self._chrome else self._maximized}
+
+    def begin_move(self):
+        if self._chrome:
+            self._chrome.begin_move()
+
+    def begin_resize(self, edge):
+        if self._chrome:
+            self._chrome.begin_resize(edge)
 
     def close(self):
         if self._window:
@@ -253,9 +265,10 @@ def start_desktop():
         js_api=window_api,
         width=1400,
         height=900,
-        min_size=(900, 600),
+        min_size=(480, 320),
+        resizable=True,
         frameless=True,
-        easy_drag=True,
+        easy_drag=False,
         shadow=False,
         background_color="#D6D3CB",
         text_select=True,
@@ -264,6 +277,8 @@ def start_desktop():
 
     from desktop.close_checkpoint import attach_close_checkpoint
     attach_close_checkpoint(window)
+    from desktop.window_chrome import attach_window_chrome
+    window_api._chrome = attach_window_chrome(window)
 
     try:
         webview.start(gui="edgechromium", debug=use_dev_mode or "--debug" in sys.argv)
