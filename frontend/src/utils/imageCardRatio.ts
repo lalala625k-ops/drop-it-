@@ -33,6 +33,6 @@ export function getImageCardTextHeight(card: Card): number {
     }
   }
   if (card.type === 'image') return card.title ? 24 : 0;
-  if (card.type === 'web') return card.image ? 68 : 0;
+  if (card.type === 'web' || card.type === 'file') return card.image ? 68 : 0;
   return 0;
 }

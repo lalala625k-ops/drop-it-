@@ -22,6 +22,13 @@ from pathlib import Path
 # Project root is one level above the desktop folder
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
+if '--source-worker' in sys.argv:
+    from desktop.source_documents import serve
+    sys.stdin.reconfigure(encoding='utf-8')
+    sys.stdout.reconfigure(encoding='utf-8')
+    serve()
+    sys.exit(0)
+from desktop.file_source_api import FileSourceApi
 from desktop.close_checkpoint import stop_owned_process as stop_process
 from desktop.dev_server import ensure_vite_server, vite_available
 # In the distributed build this launcher starts the adjacent frozen backend
@@ -109,10 +116,11 @@ def stop_services(server, vite_process=None):
             server.should_exit = True
 
 
-class WindowApi:
+class WindowApi(FileSourceApi):
     """Small bridge used by the frameless WebView window controls."""
 
     def __init__(self):
+        super().__init__()
         # Keep the native window private. pywebview recursively inspects the
         # API object while exposing it to JavaScript; a public ``window``
         # attribute pointing back to the pywebview Window creates a cycle and
@@ -280,6 +288,8 @@ def start_desktop():
         text_select=True,
     )
     window_api._window = window
+    from desktop.file_source_api import attach_file_sources
+    attach_file_sources(window_api, window)
 
     from desktop.close_checkpoint import attach_close_checkpoint
     attach_close_checkpoint(window)

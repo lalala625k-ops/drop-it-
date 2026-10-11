@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Literal
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from backend.services.atomic_files import locked_workspace
@@ -9,9 +9,15 @@ from backend.services.storage import (
 
 router = APIRouter(prefix="/api/cards", tags=["cards"])
 
+class FileSourceModel(BaseModel):
+    path: str
+    name: str
+    linkedBy: Literal['detected', 'selected']
+    app: Optional[str] = None
+
 class CardModel(BaseModel):
     id: str
-    type: str  # 'image' | 'web' | 'text'
+    type: str  # 'image' | 'web' | 'text' | 'file'
     x: float
     y: float
     width: float
@@ -24,6 +30,8 @@ class CardModel(BaseModel):
     headerTitle: Optional[str] = None
     url: Optional[str] = None
     image: Optional[str] = None
+    thumbnail: Optional[str] = None
+    fileSource: Optional[FileSourceModel] = None
     description: Optional[str] = None
     favicon: Optional[str] = None
     reminder: Optional[str] = None

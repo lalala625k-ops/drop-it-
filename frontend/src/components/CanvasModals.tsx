@@ -1,6 +1,7 @@
 import React from 'react';
 import { Card, Group, Viewport } from '../types';
 import { PieDateMenu, PieMenuTarget } from './PieDateMenu';
+import type { SourceAction } from '../utils/fileSource';
 import { PieMenuFocusOverlay } from './PieMenuFocusOverlay';
 import { SearchModal } from './SearchModal';
 import { MinimapNav } from './MinimapNav';
@@ -23,6 +24,7 @@ interface CanvasModalsProps {
   onGroupColor: (groupId: string, color: string) => void;
   onReparseLink: (cardId: string) => void;
   onRecognizeImage: (cardId: string, mode: 'ocr' | 'link') => void;
+  onSourceAction: (cardId: string, action: SourceAction) => void;
   onUngroupBundle: (bundleId: string) => void;
   onResetObjectSize: (id: string) => void;
   onDissolveParent: (parentId: string) => void;
@@ -54,6 +56,7 @@ export const CanvasModals: React.FC<CanvasModalsProps> = ({
   onGroupColor,
   onReparseLink,
   onRecognizeImage,
+  onSourceAction,
   onUngroupBundle,
   onResetObjectSize,
   onDissolveParent,
@@ -99,6 +102,7 @@ export const CanvasModals: React.FC<CanvasModalsProps> = ({
           onGroupColor={(color) => { if (menuTarget.kind === 'parent') onGroupColor(menuId, color); }}
           onReparseLink={() => onReparseLink(menuId)}
           onRecognizeImage={(mode) => onRecognizeImage(menuId, mode)}
+          onSourceAction={(action) => onSourceAction(menuId, action)}
           onUniformWidth={onUniformWidth}
           onCommand={(command) => onCanvasCommand(command, menuTarget)}
           onUngroup={() => {

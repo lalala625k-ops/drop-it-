@@ -1,4 +1,11 @@
-export type CardType = 'image' | 'web' | 'text';
+export type CardType = 'image' | 'web' | 'text' | 'file';
+
+export interface FileSource {
+  path: string;
+  name: string;
+  linkedBy: 'detected' | 'selected';
+  app?: string;
+}
 
 export interface Card {
   id: string;               // 唯一标识
@@ -14,6 +21,7 @@ export interface Card {
   title?: string;           // 网页标题 / 图片提取标题 / 原标题
   headerTitle?: string;     // 顶部超大字粗体自定义标题 (占满卡片宽度)
   url?: string;             // 网页链接
+  fileSource?: FileSource | null; // 本地文档引用；原文件不打包进画板
   image?: string;           // 网页缩略图 / 图片卡片Base64或路径
   thumbnail?: string;       // 800px WebP 低阶预览图路径（用于流畅缩放）
   description?: string;     // 网页完整描述 (悬停展示)

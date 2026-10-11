@@ -1,4 +1,5 @@
 import type { CanvasPin, Card, Group } from '../types';
+import { validFileSource } from './fileSource';
 import { CanvasClipboardSnapshot, cardImageToPngBlob, getExternalClipboardText } from './canvasClipboard';
 
 export const CANVAS_CLIPBOARD_MIME = 'web application/x-infinite-canvas+json';
@@ -39,7 +40,8 @@ export function parseClipboardSnapshot(raw: string): CanvasClipboardSnapshot | n
       value[key] == null || (typeof value[key] === 'number' && Number.isFinite(value[key])));
     const booleans = (value: unknown, keys: string[]) => record(value) && keys.every((key) =>
       value[key] == null || typeof value[key] === 'boolean');
-    const validCard = (card: Card) => box(card) && ['text', 'web', 'image'].includes(card.type) &&
+    const validCard = (card: Card) => box(card) && ['text', 'web', 'image', 'file'].includes(card.type) &&
+      (card.fileSource == null || validFileSource(card.fileSource)) && (card.type !== 'file' || validFileSource(card.fileSource)) &&
       Number.isFinite(card.zIndex) && numbers(card, ['defaultWidth', 'defaultHeight', 'contentScale']) &&
       booleans(card, ['sizeLocked', 'isParsing']) && fields(card as unknown as Record<string, unknown>,
         ['content', 'title', 'headerTitle', 'url', 'image', 'thumbnail', 'description', 'favicon', 'color', 'textColor', 'borderColor'],

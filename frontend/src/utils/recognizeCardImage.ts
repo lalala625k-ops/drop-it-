@@ -135,7 +135,7 @@ export async function recognizeCardImage(card: Card, mode: ImageRecognitionMode,
     return { kind: 'converted', outcome: 'text', updates: {
       type: 'text', content: text, title: undefined, image: undefined, thumbnail: undefined, url: undefined,
       description: undefined, favicon: undefined, isParsing: false,
-      width, height, x: card.x + (card.width - width) / 2, y: card.y + (card.height - height) / 2,
+      width, height: height + (card.fileSource ? 68 : 0), x: card.x + (card.width - width) / 2, y: card.y + (card.height - height) / 2,
     } };
   }
 

@@ -7,6 +7,7 @@ import { CanvasCommand } from './CanvasCommandMenu';
 import { PieTitleInputModal } from './PieTitleInputModal';
 import { PieTagModal } from './PieTagModal';
 import { GradientColorArc } from './GradientColorArc';
+import type { SourceAction } from '../utils/fileSource';
 export type PieMenuTarget = { kind: 'card'; card: Card } | { kind: 'bundle' | 'parent'; group: Group };
 export interface PieDateMenuProps {
   target: PieMenuTarget; allCards: Card[]; parentId?: string | null; centerPosition: Point;
@@ -17,17 +18,23 @@ export interface PieDateMenuProps {
   onDetachFromBundle: () => void; onDisconnectParent: () => void; onGroupColor: (color: string) => void;
   onCommand: (command: CanvasCommand) => void; onClose: () => void;
   selectedCardIds?: Set<string>; onUniformWidth?: () => void;
+  onSourceAction: (action: SourceAction) => void;
 }
 export const PieDateMenu: React.FC<PieDateMenuProps> = ({ target, allCards, parentId, centerPosition,
   isRightMouseDown, onConfirmTitle, onToggleTag, onReparseLink, onRecognizeImage, onUngroup,
   onResetSize, onDetachFromBundle, onDisconnectParent, onGroupColor, onCommand, onClose,
-  selectedCardIds, onUniformWidth }) => {
+  selectedCardIds, onUniformWidth, onSourceAction }) => {
   const [mode, setMode] = useState<'menu' | 'title' | 'tag' | 'color'>('menu');
   const card = target.kind === 'card' ? target.card : undefined;
   const { center, scale } = placePieMenu(centerPosition, 170);
   const selectedCards = card && selectedCardIds?.has(card.id) && selectedCardIds.size > 1
     ? allCards.filter((item) => selectedCardIds.has(item.id)) : card ? [card] : [];
-  const image = card?.type === 'image', web = card?.type === 'web' && !!card.url;
+  const image = card?.type === 'image' || card?.type === 'file', web = card?.type === 'web' && !!card.url;
+  const common = commonRadialItems().map((item) => item.id === 'file-menu' && card && selectedCards.length === 1
+    && (image || card.type === 'text') ? { ...item, label: '来源文件', description: '本地文件来源',
+      children: [radialAction('open-source', { disabled: !card.fileSource }),
+        radialAction('associate-source', { label: card.fileSource ? '更换来源' : '关联文件' }),
+        radialAction('remove-source', { disabled: !card.fileSource })] } : item);
   const items = [radialAction('title', { description: card ? '设置悬浮标题'
     : target.kind === 'bundle' ? '设置 Group 标题' : '重命名原点' }), radialAction('tag'),
     ...(target.kind === 'parent' ? [radialAction('color')] : []),
@@ -36,13 +43,14 @@ export const PieDateMenu: React.FC<PieDateMenuProps> = ({ target, allCards, pare
       detach: !!card?.bundleId, disconnect: !!(card?.groupId || parentId) }),
     ...(target.kind !== 'parent' ? [radialBranch('layout-menu', { 'uniform-width': selectedCards.length > 1 })] : []),
     ...(image || web ? [radialBranch('recognize-menu', { ocr: image && !card?.isParsing,
-      link: image && !card?.isParsing, reparse: web && !card?.isParsing })] : []), ...commonRadialItems()];
+      link: image && card?.type !== 'file' && !card?.isParsing, reparse: web && !card?.isParsing })] : []), ...common];
   const choose = (id: RadialAction) => {
     if (id === 'title' || id === 'tag' || id === 'color') { setMode(id); return; }
     if (id === 'reset-size') onResetSize();
     else if (id === 'uniform-width') onUniformWidth?.();
     else if (id === 'reparse') onReparseLink();
     else if (id === 'ocr' || id === 'link') onRecognizeImage(id);
+    else if (id === 'open-source' || id === 'associate-source' || id === 'remove-source') onSourceAction(id);
     else if (id === 'ungroup') onUngroup();
     else if (id === 'detach') onDetachFromBundle();
     else if (id === 'disconnect') onDisconnectParent();

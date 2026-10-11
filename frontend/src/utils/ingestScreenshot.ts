@@ -1,5 +1,6 @@
 import { Card } from '../types';
 import { removePendingImage, storePendingImage } from './pendingImages';
+import { screenshotSource } from './fileSource';
 
 interface ImageActions {
   createCard: (data: Partial<Card>) => Card;
@@ -7,6 +8,7 @@ interface ImageActions {
   getCard: (id: string) => Card | undefined;
   showToast: (message: string) => void;
   position: { x: number; y: number };
+  matchClipboardSource?: boolean;
 }
 
 const readImage = (file: File) => new Promise<string>((resolve, reject) => {
@@ -48,8 +50,10 @@ export async function ingestScreenshot(file: File, actions: ImageActions) {
   const id = `card-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   const backedUp = await storePendingImage(id, dataUrl);
   const width = Math.min(size.width, 360);
-  const height = width * size.height / size.width;
-  actions.createCard({ id, type: 'image', image: dataUrl, width, height,
+  const fileSource = actions.matchClipboardSource ? await screenshotSource(dataUrl) : undefined;
+  const height = width * size.height / size.width + (fileSource ? 68 : 0);
+  actions.createCard({ id, type: fileSource ? 'file' : 'image', fileSource, title: fileSource?.name,
+    image: dataUrl, width, height,
     x: actions.position.x - width / 2, y: actions.position.y - height / 2 });
 
   let uploaded = false;
@@ -69,7 +73,7 @@ export async function ingestScreenshot(file: File, actions: ImageActions) {
     // until the URL has actually decoded as an image.
     await imageSize(asset.url);
     const current = actions.getCard(id);
-    if (!current || current.type === 'image') {
+    if (current && (current.type === 'image' || current.type === 'file')) {
       actions.updateCard(id, { image: asset.url,
         thumbnail: typeof asset.thumbnail_url === 'string' ? asset.thumbnail_url : undefined });
       window.setTimeout(() => { void removePendingImage(id); }, 2000);

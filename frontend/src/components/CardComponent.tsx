@@ -6,6 +6,7 @@ import { CardHeaderBadges } from './card/CardHeaderBadges';
 import { CardBodyContent } from './card/CardBodyContent';
 import { isFeishuUrl } from '../utils/feishu';
 import { getThumbnailUrl } from '../utils/thumbnail';
+import { openSource, sourceError } from '../utils/fileSource';
 
 export type { ResizeHandleDirection };
 
@@ -17,6 +18,7 @@ interface CardComponentProps {
   parentHighlighted?: boolean;
   onSelect: (e: React.MouseEvent) => void;
   onUpdate: (id: string, updates: Partial<Card>) => void;
+  onAutoSize: (id: string, updates: Partial<Card>) => void;
   onTextEdit: (id: string, updates: Partial<Card>) => void;
   onTextEditStart: () => void;
   onDoubleClick: (card: Card) => void;
@@ -37,6 +39,7 @@ const CardComponentInner: React.FC<CardComponentProps> = ({
   parentHighlighted = false,
   onSelect,
   onUpdate,
+  onAutoSize,
   onTextEdit,
   onTextEditStart,
   onDoubleClick,
@@ -98,10 +101,12 @@ const CardComponentInner: React.FC<CardComponentProps> = ({
     e.stopPropagation();
     // Only open website when the card was already selected before pointer down
     if (!wasSelectedAtPointerDownRef.current || !isSelected) return;
-    if (card.url) {
+    if (card.fileSource) {
+      void openSource(card.fileSource).catch(sourceError);
+    } else if (card.url) {
       window.open(card.url, '_blank', 'noopener,noreferrer');
     }
-  }, [isSelected, card.url]);
+  }, [isSelected, card.url, card.fileSource]);
 
   const displayCard = editingTextSize ? { ...card, ...editingTextSize } : card;
 
@@ -168,8 +173,8 @@ const CardComponentInner: React.FC<CardComponentProps> = ({
             highQualityImage={highQualityImage} crispRender={crispRender} onUpdate={onUpdate}
             onTextEdit={onTextEdit} onTextEditStart={onTextEditStart}
             onTextEditingSize={setEditingTextSize}
-            onWebLinkClick={handleWebLinkClick} contentScale={contentScale} />
-          {card.isParsing && (card.type === 'web' || card.type === 'image') && (
+            onWebLinkClick={handleWebLinkClick} onAutoSize={onAutoSize} contentScale={contentScale} />
+          {card.isParsing && (card.type === 'web' || card.type === 'image' || card.type === 'file') && (
             <div role="status" aria-live="polite"
               className="absolute inset-0 z-40 flex flex-col items-center justify-center gap-2 bg-paper/90 text-ink pointer-events-none">
               <div aria-hidden="true" className="w-8 h-8 rounded-full border-2 border-ash border-t-ink animate-spin" />

@@ -6,6 +6,16 @@
 
 ## 1. 桌面端架构演进与设计理念
 
+### 截图原文件来源（2026-10-11，实验性）
+
+`WindowApi` 混入 `FileSourceApi`，窗口创建时启动被动观察器，关闭时清空记录并停止子进程。低级钩子不拦截输入，观察微信默认 `Alt+A`，并确认微信 `SnapshotWnd`/`CToolBarWnd` 的进程归属。截图前保存来源窗口、虚拟屏幕原点及像素；完成时只读 CF_DIB，不重写剪贴板。
+
+完整来源通过已运行的软件接口读取，不从窗口标题拼路径。Photoshop 使用 `ActiveDocument.FullName`；WPS PDF 使用 `KPDF.Application`，多个可见阅读器窗口时拒绝匹配；WPS 演示通过文档子窗口的原生对象读取 Presentation.FullName。COM 在可停止的隐藏子进程中执行，避免繁忙软件挂住桌面主线程；各适配器独立，PDF/PPT 不依赖 Photoshop 运行。
+
+必须核验框选完全落在来源窗口、无其他窗口遮挡、图片与原屏幕选区像素一致、剪贴板序号未变及记录未超过 5 分钟。QQ、其他快捷键、标注、多窗口框选、其他阅读器未认证，核验失败保留图片，用户可通过原生文件选择器手动关联。
+
+只读路径引用经过现有工作区存储，点击时重新检查文件存在并由 `os.startfile` 打开。原文档不复制、不保存修改，不进入 `.drop`。更新原生代码后须重启桌面窗口，旧安装包需重新构建方可包含此功能。
+
 开发和发布桌面端均使用 **Windows 原生 Edge WebView2 + FastAPI 本地服务**。开发态便于快速迭代和 HMR 调试，发布态使用 PyInstaller 固化 Python 服务与轻量 pywebview 启动壳：
 - **开发入口统一**：项目根目录 `npm run dev` 转调 `desktop/run_dev.bat`，由 `desktop/app.py` 管理 FastAPI 线程、Vite HMR 和 WebView2 窗口。Vite 只负责热更新与 API 代理，不自行启动后端。
 - **发布态自包含**：PyInstaller 将 FastAPI、OCR、Pillow 和模型运行库打进后端服务，启动壳与后端一起放入安装包；不依赖 Python 或 Node.js。

@@ -115,6 +115,8 @@ export function useCanvasActions({
       headerTitle: cardData.headerTitle,
       url: cardData.url,
       image: cardData.image,
+      thumbnail: cardData.thumbnail,
+      fileSource: cardData.fileSource,
       description: cardData.description,
       favicon: cardData.favicon,
       isParsing: cardData.isParsing,
@@ -269,7 +271,7 @@ export function useCanvasActions({
     const nextCards = cardsRef.current.map((card) => {
       if (!targetSet.has(card.id)) return card;
       let newHeight = card.height;
-      const hasImage = card.type === 'image' || (card.type === 'web' && !!card.image);
+      const hasImage = card.type === 'image' || ((card.type === 'web' || card.type === 'file') && !!card.image);
       if (hasImage) {
         const ratio = getImageRatio(card);
         const textH = getImageCardTextHeight(card);

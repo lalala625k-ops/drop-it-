@@ -6,6 +6,7 @@ import { buildLinkCardUpdates, recognizeCardImage, ImageRecognitionMode,
 import { bundleBounds } from './useBundleGroups';
 import { isFeishuUrl, FEISHU_LOGO_URLS } from '../utils/feishu';
 import { manualSearchFallback } from '../utils/manualSearch';
+import { openSource, selectSource, sourceCardUpdates, SourceAction } from '../utils/fileSource';
 
 export interface ActivePieMenuState {
   target: { kind: 'card'; card: Card } | { kind: 'bundle' | 'parent'; group: Group };
@@ -72,6 +73,26 @@ export function usePieMenuState({
   const closePieMenu = useCallback(() => {
     setActivePieMenu(null);
   }, []);
+
+  const handleSourceAction = useCallback(async (cardId: string, action: SourceAction) => {
+    setActivePieMenu(null);
+    const original = cardsRef.current.find((card) => card.id === cardId);
+    if (!original) return;
+    try {
+      if (action === 'open-source') {
+        if (original.fileSource) await openSource(original.fileSource);
+        return;
+      }
+      const source = action === 'associate-source' ? await selectSource() : undefined;
+      if (action === 'associate-source' && !source) return;
+      const current = cardsRef.current.find((card) => card.id === cardId);
+      if (!current || current.type !== original.type || current.fileSource !== original.fileSource) return;
+      pushHistory(cardsRef.current, groupsRef.current);
+      const next = cardsRef.current.map((card) => card.id === cardId ? { ...card, ...sourceCardUpdates(card, source) } : card);
+      const groups = groupsRef.current.map((group) => group.kind === 'bundle' ? bundleBounds(next, group.id, group) : group);
+      setCards(next); setGroups(groups); saveStateDebounced(next, groups);
+    } catch (error) { showToast(error instanceof Error ? error.message : '来源文件操作失败'); }
+  }, [cardsRef, groupsRef, pushHistory, setCards, setGroups, showToast]);
 
   const handleConfirmPieDate = useCallback(
     (cardId: string, dateStr: string | null) => {
@@ -267,7 +288,7 @@ export function usePieMenuState({
 
   const recognizeSingleImage = useCallback(async (cardId: string, mode: ImageRecognitionMode) => {
     const card = cardsRef.current.find((item) => item.id === cardId);
-    if (!card || card.type !== 'image') return;
+    if (!card || !['image', 'file'].includes(card.type) || (card.type === 'file' && mode !== 'ocr')) return;
     recognizingIdsRef.current.add(cardId);
     setCards((prev) => prev.map((item) => item.id === cardId ? { ...item, isParsing: true } : item));
     let reported = false;
@@ -277,7 +298,7 @@ export function usePieMenuState({
         onRecognitionReport?.(report);
       });
       const current = cardsRef.current.find((item) => item.id === cardId);
-      if (!current || current.type !== 'image') return;
+      if (!current || !['image', 'file'].includes(current.type)) return;
       if (!result) {
         setCards((prev) => prev.map((item) => item.id === cardId ? { ...item, isParsing: false } : item));
         showToast(mode === 'link' ? '未找到可信原链接，图片已保留' : '未识别到文字，图片已保留');
@@ -323,7 +344,8 @@ export function usePieMenuState({
       ? [...activePieMenu.selectedCardIds]
       : [cardId];
 
-    const targetCards = cardsRef.current.filter((c) => selectedIds.includes(c.id) && c.type === 'image' && !recognizingIdsRef.current.has(c.id));
+    const targetCards = cardsRef.current.filter((c) => selectedIds.includes(c.id) &&
+      (c.type === 'image' || (c.type === 'file' && mode === 'ocr')) && !recognizingIdsRef.current.has(c.id));
     if (targetCards.length === 0) return;
 
     setActivePieMenu(null);
@@ -393,6 +415,7 @@ export function usePieMenuState({
     updatePieMenuPointer,
     releasePieMenuMouseDown,
     closePieMenu,
+    handleSourceAction,
     handleConfirmPieDate,
     handleConfirmPieTitle,
     handleTogglePieTag,

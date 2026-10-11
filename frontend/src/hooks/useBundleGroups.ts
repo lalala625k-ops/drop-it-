@@ -336,7 +336,7 @@ export function useBundleGroups({ cardsRef, setCards, groupsRef, setGroups, sele
         y: anchor.y + (card.y - anchor.y) * scale,
         width: card.width * scale,
         height: card.height * scale,
-        sizeLocked: card.type === 'web' ? true : card.sizeLocked,
+        sizeLocked: card.type === 'web' || card.type === 'file' ? true : card.sizeLocked,
         contentScale: ((group.outlinePadding ?? PAD) / PAD) * scale,
       } : card);
       const scaledGroup = { ...group, outlinePadding: (group.outlinePadding ?? PAD) * scale };

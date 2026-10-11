@@ -58,7 +58,7 @@ export async function readAllPendingImages(): Promise<Record<string, string>> {
 
 export async function restorePendingImages(cards: Card[]): Promise<Card[]> {
   return Promise.all(cards.map(async (card) => {
-    if (card.type !== 'image' || card.image) return card;
+    if (!['image', 'file'].includes(card.type) || card.image) return card;
     const image = await readPendingImage(card.id);
     return image ? { ...card, image } : card;
   }));

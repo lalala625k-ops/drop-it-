@@ -1,7 +1,8 @@
 export type RadialAction = 'note' | 'parent' | 'pin' | 'title' | 'tag' | 'color'
   | 'cut' | 'copy' | 'paste' | 'group' | 'ungroup' | 'detach' | 'disconnect'
   | 'reset-size' | 'uniform-width' | 'auto-pack' | 'open' | 'save' | 'save-as'
-  | 'new-board' | 'ocr' | 'link' | 'reparse' | 'search' | 'settings';
+  | 'new-board' | 'ocr' | 'link' | 'reparse' | 'search' | 'settings'
+  | 'open-source' | 'associate-source' | 'remove-source';
 export type RadialBranch = 'file-menu' | 'layout-menu' | 'group-menu' | 'recognize-menu';
 export type RadialItemId = RadialAction | RadialBranch;
 export interface RadialItem {
@@ -27,6 +28,9 @@ const definitions: Record<RadialAction, [string, string, string?]> = {
   ocr: ['OCR', '识别图片文字', 'Ctrl+I'], link: ['溯源', '识别图片原链接', 'Ctrl+Shift+I'],
   reparse: ['解析', '重新解析网页链接', 'Ctrl+U'],
   search: ['搜索', '搜索便签', 'Ctrl+K'], settings: ['设置', '打开设置', 'Ctrl+,'],
+  'open-source': ['打开来源', '打开原位置的文件'],
+  'associate-source': ['关联文件', '选择或更换来源文件'],
+  'remove-source': ['移除来源', '移除文件关联，保留截图或文字'],
 };
 // These angles never change when an unavailable operation is omitted.
 const angles: Partial<Record<RadialItemId, number>> = {

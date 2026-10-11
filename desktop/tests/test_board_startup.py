@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
+from desktop.file_source_api import FileSourceApi
 
 
 class BoardStartupTests(unittest.TestCase):
@@ -35,6 +36,7 @@ class BoardStartupTests(unittest.TestCase):
         exec(compile(ast.Module(body=[function], type_ignores=[]), str(source), 'exec'), namespace)
         with patch.dict(sys.modules, {'webview': webview, 'uvicorn': uvicorn}), \
              patch('desktop.close_checkpoint.attach_close_checkpoint'), \
+             patch('desktop.file_source_api.attach_file_sources'), \
              contextlib.redirect_stdout(io.StringIO()), self.assertRaises(SystemExit):
             namespace['start_desktop']()
         return namespace, uvicorn, webview
@@ -74,7 +76,7 @@ class BoardStartupTests(unittest.TestCase):
         namespace = dict(os=os, sys=SimpleNamespace(executable='C:/qa/python.exe', argv=['--dev']),
             IS_FROZEN=False, PROJECT_ROOT=Path('C:/qa/source'), __file__=str(source),
             uuid=SimpleNamespace(uuid4=lambda: SimpleNamespace(hex='a' * 32)),
-            subprocess=MagicMock(), Path=Path)
+            subprocess=MagicMock(), Path=Path, FileSourceApi=FileSourceApi)
         exec(compile(ast.Module(body=[bridge], type_ignores=[]), str(source), 'exec'), namespace)
         api = namespace['WindowApi']()
         api._window = MagicMock()

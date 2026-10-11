@@ -3,6 +3,7 @@ import { Card, Group } from '../types';
 import { bundleCollapsedHeight, bundleCollapsedWidth, bundleOutline, bundleOutlinePoints, bundleResizeHandles, BundleResizeCorner } from '../hooks/useBundleGroups';
 import { parseMarkdownHeading } from '../utils/headingUtils';
 import { SiteLogo } from './SiteLogo';
+import { LocalFileIcon } from './LocalFileIcon';
 
 interface Props {
   group: Group;
@@ -16,6 +17,7 @@ interface Props {
 }
 
 const MemberIcon: React.FC<{ card: Card }> = ({ card }) => {
+  if (card.type === 'file') return <LocalFileIcon />;
   if (card.type === 'web') return <SiteLogo url={card.url} favicon={card.favicon} className="w-4 h-4" />;
   return <span className="w-4 h-4 shrink-0 text-center text-xs leading-4" aria-hidden="true">{card.type === 'image' ? '▧' : '▤'}</span>;
 };

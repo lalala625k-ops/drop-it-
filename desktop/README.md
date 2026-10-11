@@ -10,6 +10,8 @@
 
 ## 文件结构与用途
 
+截图来源功能见根目录 `FILE_SOURCE_FEASIBILITY.md`。`file_source_api.py` 提供本地来源桥接，`screenshot_sources.py`/`source_win32.py` 被动核验微信 Alt+A 截图，`source_documents.py`/`source_probe_client.py`/`source_worker.py` 读取正在运行的文档，`file_sources.py` 管理短期图像指纹和原文件引用。新增原生模块后须完整重启桌面窗口，前端 HMR 不会更新 Python 观察器。原文档不打包进画板；未命中时可手动关联。
+
 | 文件 | 说明 |
 | :--- | :--- |
 | **`app.py`** | 桌面端核心主程序。开发时管理 FastAPI 线程与 WebView2 窗口，发布时启动同级的后端 EXE。 |

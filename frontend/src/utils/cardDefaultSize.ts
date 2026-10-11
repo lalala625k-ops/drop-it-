@@ -4,7 +4,7 @@ import { textCardSize } from './textCardSize';
 export function cardDefaultSize(card: Card, groupScale = 1) {
   if (card.type === 'text') {
     const size = textCardSize(card.content || '');
-    return { width: size.width, height: size.height + (card.tags?.length ? 32 : 0) };
+    return { width: size.width, height: size.height + (card.tags?.length ? 32 : 0) + (card.fileSource ? 68 : 0) };
   }
   if (card.defaultWidth && card.defaultHeight) {
     return { width: card.defaultWidth, height: card.defaultHeight };

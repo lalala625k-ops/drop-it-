@@ -38,7 +38,7 @@ export const SearchModal: React.FC<SearchModalProps> = ({
         card.headerTitle?.toLowerCase().includes(q) ||
         (parsedHeading.cleanText && parsedHeading.cleanText.toLowerCase().includes(q));
       const contentMatch = card.content?.toLowerCase().includes(q);
-      const urlMatch = card.url?.toLowerCase().includes(q);
+      const urlMatch = card.url?.toLowerCase().includes(q) || card.fileSource?.path.toLowerCase().includes(q);
       const descMatch = card.description?.toLowerCase().includes(q);
       const cleanQ = q.replace(/^#/, '');
       const tagMatch = card.tags?.some((t) => t.toLowerCase().includes(cleanQ));

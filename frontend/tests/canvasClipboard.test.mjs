@@ -27,6 +27,20 @@ const card = (id, values = {}) => ({ id, type: 'text', x: 10, y: 20, width: 200,
 const group = (id, values = {}) => ({ id, kind: 'bundle', title: 'Group', x: 0, y: 0, width: 400, height: 300, ...values });
 const pin = (index, values = {}) => ({ id: `pin-${index}`, index, x: 600, y: 250, zoom: 1.2, createdAt: 1234, ...values });
 
+test('file cards and OCR text preserve local sources through copy, clone and cut', () => {
+  const source = { path: 'C:\\设计\\项目.psd', name: '项目.psd', linkedBy: 'detected', app: 'Photoshop' };
+  const original = card('local-file', { type: 'file', image: 'data:image/png;base64,fixture', fileSource: source });
+  const snapshot = { cards: [original], groups: [] };
+  const decoded = parseClipboardSnapshot(serializeClipboardSnapshot(snapshot));
+  assert.deepEqual(decoded.cards[0].fileSource, source);
+  const clone = cloneClipboardSnapshot(decoded, { x: 300, y: 400 }, [], [], () => 2, false);
+  assert.deepEqual(clone.cards[0].fileSource, source);
+  const ocr = { ...original, type: 'text', content: 'OCR content', image: undefined };
+  assert.deepEqual(parseClipboardSnapshot(serializeClipboardSnapshot({ ...snapshot, cards: [ocr] })).cards[0].fileSource, source);
+  assert.equal(parseClipboardSnapshot(serializeClipboardSnapshot({ ...snapshot, cards: [{ ...original, fileSource: { ...source, path: 'https://fake.test' } }] })), null);
+  assert.equal(parseClipboardSnapshot(serializeClipboardSnapshot({ ...snapshot, cards: [{ ...original, fileSource: null }] })), null);
+});
+
 test('ordinary marquee selects Group, origin and pins, while interior selections stay individual', () => {
   const cards = [card('member', { bundleId: 'bundle', x: 50, y: 80 })];
   const groups = [group('bundle'), group('origin', { kind: 'parent', x: 400, y: 80, width: 120, height: 120 })];

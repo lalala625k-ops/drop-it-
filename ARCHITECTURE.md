@@ -6,6 +6,23 @@
 
 ## 1. 架构与维护原则
 
+### 2026-10-11：截图来源文件接入
+
+| 模块 | 职责 |
+| :--- | :--- |
+| `desktop/screenshot_sources.py`、`source_win32.py` | 被动监听微信 Alt+A、鼠标选区和剪贴板更新；核验来源窗口、遮挡、原屏幕像素与 CF_DIB；仅保留短期内存记录 |
+| `desktop/source_documents.py`、`source_probe_client.py`、`source_worker.py` | 只连接已运行的 Photoshop/WPS 原生文档接口；独立隐藏子进程执行 COM，超时停止并重启，不创建软件实例 |
+| `desktop/file_sources.py` | 本地文档路径校验、规范化 RGB 指纹、选区校验、剪贴板序号及 5 分钟有效期匹配 |
+| `desktop/file_source_api.py` | `WindowApi` 原生桥接 mixin，匹配截图、选择来源、系统默认打开与监听器生命周期 |
+| `frontend/src/utils/fileSource.ts`、`ingestScreenshot.ts` | 有界桥接查询、手动关联更新及图片摄入；仅剪贴板图片触发自动查询 |
+| `LocalFileIcon.tsx`、`card/TextFileSource.tsx`、`card/CardBodyContent.tsx` | 文件卡头图、本地图标/路径、OCR 文本来源入口 |
+| `usePieMenuState.ts`、`PieDateMenu.tsx` | 来源文件右键分支、打开/关联/移除、历史快照、Group 边界及保存 |
+| `backend/routes/cards.py` | `FileSourceModel`、`CardModel.fileSource` 和缩略图字段；沿用 SQLite、暂存与 `.drop` 元数据保存 |
+
+数据流：微信截图开始 → 来源窗口及屏幕快照 → 只读文档适配器 → 验证选区与剪贴板像素 → 短期来源记录 → 图片粘贴原生查询 → `file` 卡 → 现有资源/工作区存储。原文件留在原位置；FastAPI 不提供任意文件打开接口，打开仅走桌面桥接。`Card.fileSource` 对旧画板可选，OCR 文本卡也可携带；仅图片、网页头图等画板资源进入 `.drop`。
+
+新原生模块需重启桌面壳，Vite HMR 只更新前端。自动适配仍为实验功能，认证范围见 `FILE_SOURCE_FEASIBILITY.md`。
+
 - 前端为 React 18 + TypeScript + Vite + Tailwind CSS；近景画布由 DOM 的位移/缩放实现，远景大量对象用 Canvas 简化绘制，连线与外层 Group 轮廓使用 SVG。后端为 FastAPI，卡片、外层 Group 与圆形原点保存在 SQLite。
 - `components/` 负责呈现和事件绑定，部分组件仍包含局部编辑状态；跨组件业务状态与交互调度放在 `hooks/`，几何和字符串计算放在 `utils/`。
 - `utils/storage.ts` 是有副作用的存储适配器，包含 LocalStorage、网络请求及文件持久化读写；其他计算工具应保持纯函数，不依赖 React Hook。

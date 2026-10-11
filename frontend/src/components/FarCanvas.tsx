@@ -36,7 +36,7 @@ export function FarCanvas({ cards, groups, viewport }: Props) {
     }
     for (const card of cards) {
       const box = rect(card.x, card.y, card.width, card.height);
-      context.fillStyle = card.type === 'image' ? '#d7d4cd' : card.type === 'web' ? '#e8e6df' : '#fffefa';
+      context.fillStyle = card.type === 'image' ? '#d7d4cd' : (card.type === 'web' || card.type === 'file') ? '#e8e6df' : '#fffefa';
       context.fillRect(box.px, box.py, box.width, box.height);
       context.strokeStyle = '#373633';
       context.lineWidth = 1;

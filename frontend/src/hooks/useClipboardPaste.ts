@@ -28,7 +28,7 @@ export function useClipboardPaste({
   getCardById,
 }: UseClipboardPasteProps) {
   const handleDataTransfer = useCallback(
-    async (clipboardData: DataTransfer) => {
+    async (clipboardData: DataTransfer, fromClipboard = false) => {
       const snapshot = readClipboardSnapshot(clipboardData);
       if (snapshot && stageCopiedObjects) {
         stageCopiedObjects(snapshot);
@@ -58,6 +58,7 @@ export function useClipboardPaste({
             getCard: getCardById,
             showToast: (message) => showToast?.(message),
             position: { ...getWorldPosition() },
+            matchClipboardSource: fromClipboard && !html && !rawText,
           });
           return;
       }
@@ -286,7 +287,7 @@ export function useClipboardPaste({
       if (!hasImage && !(canvasEditorFocused && (hasCanvasMultiSelection || hasObjects))) return;
     }
     event.preventDefault();
-    if (event.clipboardData) void handleDataTransfer(event.clipboardData);
+    if (event.clipboardData) void handleDataTransfer(event.clipboardData, true);
   }, [handleDataTransfer, hasCanvasMultiSelection]);
 
   const pasteFromSystemClipboard = useCallback(async () => {
@@ -302,7 +303,7 @@ export function useClipboardPaste({
             else data.setData(type, await blob.text());
           }
         }
-        await handleDataTransfer(data);
+        await handleDataTransfer(data, true);
         return;
       } catch {
         // Permissions or clipboard.read unsupported, continue

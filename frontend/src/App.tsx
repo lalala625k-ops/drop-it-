@@ -59,6 +59,11 @@ export default function App() {
   const savingDropRef = useRef(false);
   const [toast, setToast] = useState<string | null>(null);
   const showToast = useCallback((msg: string) => setToast(msg), []);
+  useEffect(() => {
+    const failed = (event: Event) => showToast((event as CustomEvent<string>).detail);
+    window.addEventListener('pinboard-file-error', failed);
+    return () => window.removeEventListener('pinboard-file-error', failed);
+  }, [showToast]);
 
   useEffect(() => {
     const release = () => setPressedObject(null);
@@ -418,7 +423,7 @@ export default function App() {
 
   const handleShortcutImageOCR = useCallback(() => {
     const cardId = [...selectedCardIdsRef.current].find((id) =>
-      cardsRef.current.some((c) => c.id === id && c.type === 'image'));
+      cardsRef.current.some((c) => c.id === id && (c.type === 'image' || c.type === 'file')));
     if (cardId) pieMenu.handleRecognizeImage(cardId, 'ocr');
   }, [pieMenu]);
 
@@ -874,6 +879,7 @@ export default function App() {
               parentHighlighted={parentHighlights.cardIds.has(card.id)}
               onSelect={(e) => canvasInteractions.handleStartCardDrag(card, e)}
               onUpdate={actions.handleCardUpdate}
+              onAutoSize={actions.handleCardTextEdit}
               onTextEdit={actions.handleCardTextEdit}
               onTextEditStart={handleTextEditStart}
               onDoubleClick={handleCardDoubleClick}
@@ -883,7 +889,7 @@ export default function App() {
                 (isWheelZooming ? wheelLodZoom : viewport.zoom) <= 20}
               useCanvasImage={!farMode && card.type === 'image' && !!(card.thumbnail || card.sizeLocked) && !card.title &&
                 !selectedCardIds.has(card.id) && !canvasInteractions.movingCardIds.has(card.id) && !highQualityImageMode}
-              highQualityImage={highQualityImageMode && (card.type === 'image' || card.type === 'web') && !!card.image}
+              highQualityImage={highQualityImageMode && (card.type === 'image' || card.type === 'web' || card.type === 'file') && !!card.image}
               crispRender={highQualityImageMode}
             />
         ))}
@@ -906,6 +912,7 @@ export default function App() {
         onGroupColor={pieMenu.handleGroupColor}
         onReparseLink={pieMenu.handleReparseLink}
         onRecognizeImage={pieMenu.handleRecognizeImage}
+        onSourceAction={pieMenu.handleSourceAction}
         onUngroupBundle={bundles.ungroupBundle}
         onResetObjectSize={resetObjectSize}
         onDissolveParent={dissolveParent}

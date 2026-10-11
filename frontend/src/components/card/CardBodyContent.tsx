@@ -6,11 +6,14 @@ import { textCardSize } from '../../utils/textCardSize';
 import { imageRatioCache } from '../../utils/imageCardRatio';
 import { MarkdownView } from '../MarkdownView';
 import { getThumbnailUrl } from '../../utils/thumbnail';
+import { LocalFileIcon } from '../LocalFileIcon';
+import { TextFileSource } from './TextFileSource';
 
 interface CardBodyContentProps {
   card: Card;
   isSelected: boolean;
   onUpdate: (id: string, updates: Partial<Card>) => void;
+  onAutoSize: (id: string, updates: Partial<Card>) => void;
   onTextEdit: (id: string, updates: Partial<Card>) => void;
   onTextEditStart: () => void;
   onTextEditingSize?: (size: { width: number; height: number } | null) => void;
@@ -25,6 +28,7 @@ const CardBodyContentInner: React.FC<CardBodyContentProps> = ({
   card,
   isSelected,
   onUpdate,
+  onAutoSize,
   onTextEdit,
   onTextEditStart,
   onTextEditingSize,
@@ -93,7 +97,7 @@ const CardBodyContentInner: React.FC<CardBodyContentProps> = ({
     const size = textCardSize(card.content || '');
     onTextEditingSize?.({
       width: Math.max(card.width, size.width * contentScale),
-      height: Math.max(card.height, (size.height + (card.tags?.length ? 32 : 0)) * contentScale),
+      height: Math.max(card.height, (size.height + ((card.tags?.length ? 32 : 0) + (card.fileSource ? 68 : 0))) * contentScale),
     });
   };
 
@@ -104,7 +108,7 @@ const CardBodyContentInner: React.FC<CardBodyContentProps> = ({
     }
     const size = textCardSize(content);
     const width = size.width * contentScale;
-    const height = (size.height + (card.tags?.length ? 32 : 0)) * contentScale;
+    const height = (size.height + ((card.tags?.length ? 32 : 0) + (card.fileSource ? 68 : 0))) * contentScale;
     if (!card.sizeLocked) onTextEditingSize?.({ width, height });
     onTextEdit(card.id, {
       content,
@@ -116,7 +120,7 @@ const CardBodyContentInner: React.FC<CardBodyContentProps> = ({
     if (card.type !== 'text') return;
     const size = textCardSize(content);
     const width = size.width * contentScale;
-    const height = (size.height + (card.tags?.length ? 32 : 0)) * contentScale;
+    const height = (size.height + ((card.tags?.length ? 32 : 0) + (card.fileSource ? 68 : 0))) * contentScale;
     if (content === (card.content || '') && (card.sizeLocked
       || (card.width === width && card.height === height))) return;
     onTextEdit(card.id, { content,
@@ -198,14 +202,14 @@ const CardBodyContentInner: React.FC<CardBodyContentProps> = ({
       if (card.image) imageRatioCache.set(card.image, ratio);
 
       if (card.sizeLocked) return;
-      if (card.type === 'web') {
+      if (card.type === 'web' || card.type === 'file') {
         const imgHeight = card.width / ratio;
         const footerH = footerRef.current?.offsetHeight || 68;
         const targetHeight = Math.round(imgHeight + footerH);
         const key = `${card.id}_${card.image}_${Math.round(card.width)}`;
         if (Math.abs(card.height - targetHeight) > 4 && adjustedKeyRef.current !== key) {
           adjustedKeyRef.current = key;
-          onUpdate(card.id, { height: targetHeight });
+          onAutoSize(card.id, { height: targetHeight });
         }
       } else if (card.type === 'image') {
         const titleH = titleRef.current?.offsetHeight || (card.title ? 24 : 0);
@@ -213,7 +217,7 @@ const CardBodyContentInner: React.FC<CardBodyContentProps> = ({
         const key = `${card.id}_${card.image}_${Math.round(card.width)}_${titleH}`;
         if (Math.abs(card.height - targetHeight) > 4 && adjustedKeyRef.current !== key) {
           adjustedKeyRef.current = key;
-          onUpdate(card.id, { height: targetHeight });
+          onAutoSize(card.id, { height: targetHeight });
         }
       }
     }
@@ -234,7 +238,7 @@ const CardBodyContentInner: React.FC<CardBodyContentProps> = ({
       }}
     >
       <div className="flex items-center gap-2">
-        <SiteLogo url={card.url} favicon={card.favicon} />
+        {card.type === 'file' ? <LocalFileIcon /> : <SiteLogo url={card.url} favicon={card.favicon} />}
         {isEditingTitle ? (
           <input
             ref={titleInputRef}
@@ -254,22 +258,23 @@ const CardBodyContentInner: React.FC<CardBodyContentProps> = ({
               e.stopPropagation();
               if (isSelected) setIsEditingTitle(true);
             }}
-            title={isSelected ? '双击可编辑网页标题' : undefined}
+            title={isSelected ? '双击可编辑标题' : undefined}
             className={`text-[15px] leading-[1.40] font-normal text-ink text-left line-clamp-2 select-none ${
               isSelected ? 'hover:underline cursor-text' : 'cursor-default'
             }`}
           >
-            {card.title || card.url}
+            {card.title || card.fileSource?.name || card.url}
           </span>
         )}
       </div>
 
-      {card.url && (
+      {(card.url || card.fileSource) && (
         <div className="mt-1.5 flex items-center">
           <button
             type="button"
             onClick={onWebLinkClick}
-            title={isSelected ? `在新标签页打开: ${card.url}` : '请先单击高亮卡片'}
+            data-source-open={card.fileSource ? true : undefined}
+            title={isSelected ? `打开: ${card.fileSource?.path || card.url}` : '请先单击高亮卡片'}
             className={`text-[11px] font-mono flex items-center gap-1 transition-colors truncate select-none text-left ${
               isSelected
                 ? 'text-ink/80 hover:text-ink hover:underline cursor-pointer'
@@ -279,7 +284,7 @@ const CardBodyContentInner: React.FC<CardBodyContentProps> = ({
             <svg className="w-3 h-3 flex-shrink-0 text-ink/70" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
             </svg>
-            <span className="truncate">{card.url.replace(/^https?:\/\//, '')}</span>
+            <span className="truncate">{card.fileSource?.path || card.url?.replace(/^https?:\/\//, '')}</span>
           </button>
         </div>
       )}
@@ -340,6 +345,7 @@ const CardBodyContentInner: React.FC<CardBodyContentProps> = ({
         </div>
       );
 
+    case 'file':
     case 'web':
       const showHeaderArea = !isFeishu && ((card.image && !imgLoadError) || card.isParsing);
       return (
@@ -351,7 +357,7 @@ const CardBodyContentInner: React.FC<CardBodyContentProps> = ({
                   <img
                     src={effectiveImageSrc}
                     alt={card.title || 'Web preview'}
-                    className="w-full h-full object-cover pointer-events-none"
+                    className="w-full h-full object-contain pointer-events-none"
                     referrerPolicy="no-referrer"
                     loading={crispRender ? 'eager' : 'lazy'}
                     decoding="async"
@@ -446,6 +452,7 @@ const CardBodyContentInner: React.FC<CardBodyContentProps> = ({
               </div>
             )}
           </div>
+          {card.fileSource && <TextFileSource source={card.fileSource} selected={isSelected} onClick={onWebLinkClick} />}
           {card.tags && card.tags.length > 0 && (
             <div
               className="px-3.5 py-1.5 flex flex-wrap gap-1.5 border-t border-ink/20 bg-paper flex-shrink-0 select-none"
@@ -493,6 +500,6 @@ export const CardBodyContent = memo(CardBodyContentInner, (previous, next) =>
   sameBodyCard(previous.card, next.card) &&
   previous.isSelected === next.isSelected && previous.canvasImage === next.canvasImage &&
   previous.highQualityImage === next.highQualityImage && previous.crispRender === next.crispRender &&
-  previous.contentScale === next.contentScale && previous.onUpdate === next.onUpdate &&
+  previous.contentScale === next.contentScale && previous.onUpdate === next.onUpdate && previous.onAutoSize === next.onAutoSize &&
   previous.onTextEdit === next.onTextEdit && previous.onTextEditStart === next.onTextEditStart &&
   previous.onTextEditingSize === next.onTextEditingSize && previous.onWebLinkClick === next.onWebLinkClick);

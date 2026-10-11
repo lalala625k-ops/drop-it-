@@ -159,6 +159,8 @@ export function getExternalClipboardText(snapshot: CanvasClipboardSnapshot): str
   for (const card of snapshot.cards) {
     if (card.url && /^https?:\/\//i.test(card.url)) {
       lines.push(card.url);
+    } else if (card.fileSource && card.type !== 'text') {
+      lines.push(card.fileSource.path);
     } else if (card.type === 'text' && card.content) {
       lines.push(card.content);
     } else if (card.type === 'web' && card.url) {
