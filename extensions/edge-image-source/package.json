@@ -1,0 +1,10 @@
+{
+  "name": "edge-image-source",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/core.test.mjs",
+    "test:edge": "node tests/edge.test.mjs"
+  }
+}

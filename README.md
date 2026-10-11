@@ -1,93 +1,80 @@
 # Drop-it 0.1
 
-把链接、文本、照片全部变成卡片，并放在一张大画布上。随意整理。
+Drop-it 是一个运行在单张二维无限画布上的知识收集与整理看板。
 
-把自己想记住的东西拖进来，逐步构建一张高度可视化的知识网络。
+区别于采用文件夹层级、侧边栏或固定分栏的传统笔记工具，Drop-it 将网页链接直接解析为包含封面与摘要的可视化卡片，与 Markdown 文本、图片一同放置在无边界的画布中，通过自由排布、弹性分组与树状连线构建直观的知识网络。
+
+---
 
 ## 主要功能
 
-1. **链接卡片**：解析网页链接，生成包含标题、描述和封面的可视化卡片。
-2. **文本记录**：支持 Markdown 格式输入，直接在画布上记录和编辑。
-3. **图片整理**：拖入或粘贴图片，自由移动、缩放和整理。
-4. **分组与关联**：各类卡片支持打组，卡片、分组和原点之间可建立树状关联。
-5. **快速跳转**：通过搜索、图钉、小地图和全览，在画布中快速定位。
+- **链接可视化**：粘贴或拖入网页 URL 自动抓取标题、描述、图标与封面图，生成自适应比例的网页卡片。
+- **单张无限画布**：不设文件夹与强制分区，所有内容在同一张 2D 画布中自由平移、缩放与排布，降低记录与分类门槛。
+- **空间分组 (Group)**：框选卡片即可一键编组（Ctrl+G），生成自适应凸包多边形轮廓；支持整组等比缩放及一键收起为列表。
+- **树状关联 (Origin)**：创建圆形原点节点（Ctrl+J），在卡片、分组与原点之间建立父子连线，支持联动位移与分类调色。
+- **快速定位与导航**：支持 1~8 号图钉平滑跳转（Ctrl+1~8）、常驻小地图（按住 M 放大）、全览（Shift+1）与全文检索（Ctrl+K）。
+- **原子化工作区 (.drop)**：将画布卡片、分组关系、视口、图钉及本地资源完整保存为单个 `.drop` 文件；支持后台自动暂存与重启续接。
+
+---
+
+## 技术规范
+
+| 维度 | 技术选型 / 规范 | 说明 |
+| :--- | :--- | :--- |
+| **操作系统** | Windows 10 / 11 (64-bit) | 依赖系统预置的 Microsoft Edge WebView2 Runtime |
+| **桌面视窗** | pywebview + Edge WebView2 | 共享系统内核与硬件加速，冷启动常驻内存 40~60MB，支持 Windows 原生贴靠 |
+| **前端架构** | React 18 + TypeScript + Vite | DOM 变换矩阵 + SVG 拓扑连线 + 空间索引视口裁剪 (LOD) |
+| **后端服务** | FastAPI + SQLite (WAL 模式) | 本地回环 (127.0.0.1:8002)，提供站点元数据抓取、WebP 缩略图与 RapidOCR |
+| **数据解耦** | `%LOCALAPPDATA%\InfiniteCanvasNote\data\` | 用户数据库与图片资源与源码物理隔离，大量图片不影响前端与安装包编译速度 |
+| **开发环境** | Node.js >= 18.0, Python >= 3.10 | 仅源码开发所需；普通用户运行发布包无需安装 |
+
+---
 
 ## 快速开始
 
-推荐使用 Windows 10/11 桌面模式。
+### 1. 下载使用（推荐）
+从 [GitHub Releases](https://github.com/lalala625k-ops/drop-it-/releases) 下载最新版本：
+- **免安装版**：解压 `Drop-it-0.1-Portable.zip`，双击运行 `DropIt.exe`。
+- **安装版**：运行 `Drop-it-Setup-0.1.exe`，按向导安装到本地并创建快捷方式。
 
-普通用户可从 [GitHub Releases](https://github.com/lalala625k-ops/drop-it-/releases) 下载：
-
-- **免安装版**：将 `Drop-it-0.1-Portable.zip` 解压到 `Drop-it 0.1` 文件夹，双击其中的 `DropIt.exe`。
-- **桌面安装版**：运行 `Drop-it-Setup-0.1.exe`，安装到当前用户目录，并创建桌面和开始菜单快捷方式。
-
-两种发布版均无需 Python 或 Node.js，需要 Microsoft Edge WebView2 Runtime。首次启动打开唯一示例 `Template一.drop`，首次“打开”定位 `Files/Template`。
-
-### 从源码运行
-
-运行源码前，请安装 Python、Node.js 和 Microsoft Edge WebView2 Runtime。
-
-拉取或解压源码后，在项目根目录执行：
-
+### 2. 源码运行
 ```powershell
+# 安装依赖
 python -m pip install -r backend/requirements-desktop.txt
 npm --prefix frontend install
+
+# 启动开发模式（WebView2 壳 + Vite HMR 热更新）
+npm run dev
+
+# 或直接运行已构建的桌面版本
 npm run desktop:start
 ```
 
-首次启动会在缺少前端构建文件时自动构建。之后也可以双击根目录的 `启动桌面版.bat`。
+---
 
-## 其他运行方式
-
-| 方式 | 操作 | 用途 |
-|---|---|---|
-| 开发模式 | `npm run dev` | 使用 WebView2 开发壳，前端修改实时更新 |
-| 浏览器模式 | 执行 `npm run build`，再双击 `open_site.bat` | 在本机浏览器中使用 |
-| 自行打包 | `npm run desktop:dist` | 生成 Windows 发布包，需要额外安装 7-Zip 和 NSIS |
-
-使用已打包的免安装版时，解压完整目录后双击 `DropIt.exe`。无需安装 Python、Node.js，仍需 WebView2 Runtime。
-
-构建产物位于 `release/Drop-it 0.1/`、`release/Drop-it-0.1-Portable.zip` 和 `release/Drop-it-Setup-0.1.exe`。根目录的 `打开免安装版.bat` 可直接打开免安装文件夹；本机另有同名 Windows 快捷方式，快捷方式不纳入 Git。NSIS 编译器可通过 `PINBOARD_MAKENSIS` 指定。
-
-## 文件与恢复
-
-默认在项目根目录或发布版 EXE 所在目录创建：
+## 目录结构
 
 ```text
-Files/
-├── Template/     示例文件
-├── Save/         手动保存的 .drop 文件
-└── Temporary/    自动暂存与恢复记录
+note/
+├── frontend/             # 前端 React 源码与画布交互管线
+├── backend/              # 本地 FastAPI、SQLite 存储与站点解析器
+├── desktop/              # Windows 原生 WebView2 宿主与打包脚本
+├── Files/                # 本地工作区目录 (Template 示例 / Save 手动存档 / Temporary 自动暂存)
+└── 启动桌面版.bat         # 根目录一键启动入口
 ```
 
-- 源码和发布包仅包含 `desktop/Template/Template一.drop` 这一份示例；发布时放入 `Files/Template`，`Save` 和 `Temporary` 初始为空。
-- 使用“保存”或“另存为”写入正式 `.drop` 文件；首次保存默认进入 `Files/Save`。
-- 后台自动暂存不覆盖正式文件，用于重启续接和历史恢复。
-- 默认停止操作后 5 秒暂存；持续操作时最长间隔 30 秒，每个画板保留最近 5 个不同状态。
-- 保存和暂存目录可在“通用设置”中调整。默认目录不可写时，使用用户本地应用目录，并显示实际路径。
-- 数据库、图片等运行数据默认位于 `%LOCALAPPDATA%\InfiniteCanvasNote\data`，与上述文件目录分别管理。
-- 桌面安装版卸载保留 `Files` 和用户运行数据；更新程序前请备份个人画板。
+---
 
-## 公开源码与本地配置
+## 详细技术文档
 
-本机密钥使用 `.local.json`、`.local.csv` 或 `.env` 文件，均不纳入 Git。个人 `.drop`、数据库、日志、恢复记录及构建产物也被忽略，只有指定 Template 示例例外。请通过 GitHub Releases 分发安装包和免安装 ZIP，避免上传整个本机工作目录。
+- [产品需求规格说明书 (PRD)](product_requirements_document.md)
+- [桌面端技术手册与架构规范 (DESKTOP_SPEC)](DESKTOP_SPEC.md)
+- [设计系统规范 (DESIGN_SPEC)](DESIGN_SPEC.md)
+- [代码架构与文件地图 (ARCHITECTURE.md)](ARCHITECTURE.md)
+- [设置名称与快捷键对照表 (SETTINGS_NAMES.md)](SETTINGS_NAMES.md)
 
-## 技术与结构
+---
 
-前端使用 React、TypeScript 和 Vite；后端使用 FastAPI 和 SQLite；Windows 桌面壳使用 pywebview 与系统 WebView2，发布时通过 PyInstaller 打包。
+## 许可证
 
-```text
-frontend/    前端界面与画布交互
-backend/     本地服务、数据存储与内容解析
-desktop/     Windows 桌面壳与启动脚本
-```
-
-## 详细文档
-
-- [产品需求](product_requirements_document.md)
-- [桌面运行与发布](DESKTOP_SPEC.md)
-- [设计规范](DESIGN_SPEC.md)
-- [代码架构](ARCHITECTURE.md)
-- [设置名称与快捷键](SETTINGS_NAMES.md)
-
-源码采用 [MIT 许可证](LICENSE)。第三方依赖及示例中的外部内容仍适用各自的许可证和权利声明。
+本项目基于 [MIT 许可证](LICENSE) 开源。

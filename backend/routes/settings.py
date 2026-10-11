@@ -74,6 +74,9 @@ def _has_explicit_drop_path() -> bool:
 
 
 def _default_open_path() -> Path:
+    remembered = get_config().get("drop_last_open_path")
+    if remembered:
+        return Path(remembered)
     has_opened = get_config().get("drop_open_storage_dir") == str(get_data_dir().resolve())
     if has_opened and _has_explicit_drop_path():
         return _current_drop_path()
@@ -373,7 +376,7 @@ def open_drop_file():
         write_snapshot(info, state, get_revision() + 1, 0)
         revision = force_replace_all(state)
         set_session(info, get_data_dir())
-        changes = {"drop_open_storage_dir": str(get_data_dir().resolve())}
+        changes = {"drop_open_storage_dir": str(get_data_dir().resolve()), "drop_last_open_path": str(target)}
         if target.resolve() == get_template_path().resolve():
             # Opening the example starts an unsaved workspace. Its first save
             # must choose a user file rather than replace the shipped example.

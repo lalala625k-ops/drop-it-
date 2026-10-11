@@ -111,7 +111,9 @@ const CardComponentInner: React.FC<CardComponentProps> = ({
       data-selected={isSelected ? 'true' : 'false'}
       title={isTinyThumbnail ? card.headerTitle || card.title || card.content?.slice(0, 80) || '便签缩略图' : undefined}
       className={`absolute rounded-none select-none group bg-paper text-ink transition-colors ${
-        showSelectionControls ? 'border-2 border-ink z-30' : 'border border-ink hover:border-2'
+        card.type === 'text'
+          ? `border-0 ${showSelectionControls ? 'z-30' : ''}`
+          : showSelectionControls ? 'border-2 border-ink z-30' : 'border border-ink hover:border-2'
       }`}
         style={{
         transform: `translate(${card.x}px, ${card.y}px)`,
@@ -120,7 +122,8 @@ const CardComponentInner: React.FC<CardComponentProps> = ({
         height: `${displayCard.height}px`,
         zIndex: card.zIndex,
         backgroundColor: useCanvasImage ? 'transparent' : undefined,
-        outline: parentHighlighted ? '3px solid #1d1d1d' : undefined,
+        outline: parentHighlighted ? '3px solid #1d1d1d'
+          : card.type === 'text' ? `${showSelectionControls ? 2 : 1}px solid #1d1d1d` : undefined,
         outlineOffset: parentHighlighted ? '2px' : undefined,
       } as React.CSSProperties}
       onMouseDown={handleMouseDown}

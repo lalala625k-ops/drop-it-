@@ -40,6 +40,7 @@ import { useCanvasActions } from './hooks/useCanvasActions';
 import { useCanvasInit } from './hooks/useCanvasInit';
 import { useWorkspaceDraft } from './hooks/useWorkspaceDraft';
 import { flushWorkspaceDraft, workspaceRequest, LoadedWorkspace } from './utils/workspaceApi';
+import { openBoardWindow, consumeOpenFileRequest } from './utils/boardWindows';
 import { useCanvasCards } from './hooks/useCanvasCards';
 import { useVirtualViewport } from './hooks/useVirtualViewport';
 import { bundleBoundsFromMembers, bundleCollapsedHeight, bundleCollapsedWidth, useBundleGroups } from './hooks/useBundleGroups';
@@ -442,7 +443,7 @@ export default function App() {
     }
   }, [cardsRef, groupsRef, viewportRef, canvasPins.pins, showToast]);
 
-  const handleOpenDrop = useCallback(async () => {
+  const handleLoadDrop = useCallback(async () => {
     if (savingDropRef.current) return;
     savingDropRef.current = true;
     setToast(null);
@@ -473,6 +474,19 @@ export default function App() {
       savingDropRef.current = false;
     }
   }, [canvasPins, handleCanvasDoubleClick, clearSelection, setViewport, showToast]);
+
+  const handleOpenDrop = useCallback(async () => {
+    if (savingDropRef.current) return;
+    savingDropRef.current = true;
+    setToast(null);
+    try {
+      await openBoardWindow(true, flushWorkspaceDraft);
+    } catch (error) {
+      showToast(`打开失败: ${error instanceof Error ? error.message : '无法读取 .drop 文件'}`);
+    } finally {
+      savingDropRef.current = false;
+    }
+  }, [showToast]);
 
   const { isShiftPressedRef, isSpacePressedRef, isAltPressedRef } = useShortcuts({
     onNewCard: () => actions.createCardAtCursor({ type: 'text', content: '', width: 260, height: 180 }),
@@ -619,18 +633,12 @@ export default function App() {
     [pushHistory, cardsRef, groupsRef]);
 
   const handleNewBoard = useCallback(() => {
-    const host = window as Window & {
-      pywebview?: { api?: { new_board?: () => Promise<void> | void } };
-    };
-    if (host.pywebview?.api?.new_board) {
-      void Promise.resolve(host.pywebview.api.new_board());
-      return;
-    }
-    // Browser fallback: open an isolated session tab. The random id keeps its
-    // local draft separate from the current board.
-    const boardId = typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : String(Date.now());
-    window.open(`${window.location.origin}${window.location.pathname}?new-board=1&board-id=${boardId}`, '_blank', 'noopener');
-  }, []);
+    void openBoardWindow().catch((error) => showToast(`打开失败: ${error.message}`));
+  }, [showToast]);
+
+  useEffect(() => {
+    if (workspaceReady && consumeOpenFileRequest()) void handleLoadDrop();
+  }, [workspaceReady, handleLoadDrop]);
 
   const handleCanvasCommand = useCallback((command: CanvasCommand) => {
     if (canvasMenuPosition) {

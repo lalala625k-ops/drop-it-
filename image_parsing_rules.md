@@ -1,8 +1,8 @@
 # 网站图片解析规则库与保护规范文档 (Image Parsing Rules & Protection Registry)
 
-> **文档版本**：v1.1
+> **文档版本**：v1.3
 >
-> **同步日期**：2026-10-01
+> **同步日期**：2026-10-09
 > **生效时间**：2026-09-21  
 > **管理规范**：本规范定义了无限画布便签系统中各网站链接封面头图、标题及元数据的解析规则。  
 > **保护机制**：站点例外规则位于 `backend/services/scrapers/protected/`；已确认可用的通用基础规则 G-001 位于 `backend/services/scrapers/fallback.py`。未经用户明确指令，不修改这些规则的核心解析逻辑。
@@ -35,6 +35,7 @@
 | **P-004** | **Pinterest** | `pinterest.com`, `pin.it` | 🔒 **已锁定** | 2026-09-21 (OK) | OpenGraph 协议解析 + `/originals/` 原始画质升频 | 探测并获取未压缩原始原图，100% 构图比例 |
 | **P-005** | **X / Twitter** | `x.com`, `twitter.com` | 🔒 **已锁定** | 2026-10-01 (OK) | FxTwitter 开放元数据接口 + Twitterbot SSR 直扫回退 | 优先使用文章或动态自身封面，其次使用所附链接预览图；无图时保持紧凑卡片 |
 | **P-007** | **Shen’s Blog** | `shens.blog` | 🔒 **已锁定** | 2026-10-01 (OK) | 通过本地代理读取页面 OpenGraph / Twitter 元数据 | 使用文章自身 `og:image`；页面无图时不生成网站截图 |
+| **P-008** | **小红书 (Xiaohongshu)** | `xiaohongshu.com`, `xhslink.com` | 🔒 **已锁定** | 2026-10-09（用户要求加入锁定区） | 保留分享参数，读取手机分享页的笔记 SSR 数据 | 首图优先详情尺寸；校验图片后缓存本地，过滤登录标志与空占位图 |
 | **E-001** | **飞书 (Feishu / Lark)** | `feishu.cn`, `larksuite.com` | ⏳ **试验区** | 无封面信息卡 | 文档路径识别 + 公开页面标题元数据 + 鉴权降级 | 统一不解析或展示封面；标题前显示飞书图标 |
 | **E-002** | **Medium** | `medium.com` 及其子域名 | ⏳ **试验区** | 待确认 | 正常读取文章元数据；遇到 403 或拦截页时从 URL 生成标题 | 拦截时不保存网页截图或封面 |
 | **G-001** | **通用网页基础规则** | 无站点例外匹配的 HTTP(S) 链接 | 🔒 **已锁定** | 2026-10-01 (OK) | OpenGraph ➔ Twitter Cards ➔ Headless 视口截图 | 优先页面元数据图片；无图且非鉴权页时截图 |
@@ -128,6 +129,15 @@
 - **试验文件**：`backend/services/scrapers/experimental/medium.py`。
 - **当前行为**：页面可访问时使用文章标题、摘要和 OpenGraph 封面；返回 403 或拦截页时保留原链接，从 URL 生成标题，并清空封面。不会把拦截页截图当作文章头图。
 
+### 🔒 规则 P-008: 小红书 (Xiaohongshu)
+- **保护文件**：`backend/services/scrapers/protected/xiaohongshu.py`；纯页面数据解析位于同目录 `xiaohongshu_page.py`。
+- **当前状态**：2026-10-09 用户明确要求“小红书的规则加入锁定区”，由试验编号 E-003 迁移为 P-008；两个文件的核心解析逻辑一并锁定，后续变更须有用户针对小红书规则的明确指令。
+- **适用入口**：官方 `/explore/{noteId}`、`/discovery/item/{noteId}` 与 `xhslink.com` 短链；链接导入、重新解析和图片溯源成功后的元数据请求共用该规则。
+- **核心策略**：保留原链接及全部分享参数，使用手机 Safari UA 访问 `/discovery/item/{noteId}`；只在官方域名内追踪短链，不读取浏览器 Cookie 或本地服务密钥。
+- **数据来源**：读取 `__INITIAL_STATE__` 或 `__SETUP_SERVER_STATE__` 中与当前笔记 ID 一致的数据，不执行页面 JavaScript。只提取第一张笔记图片，优先 `H5_DTL` / `WB_DFT`；兼容视频封面和旧页面元数据，不采用推荐笔记图片。
+- **资源与失败处理**：保留 CDN 签名及图片变换参数；校验图片格式、尺寸和下载上限后，缓存到当前画板 `assets/` 并返回 `/api/assets/...`。正式 `.drop` 保存及恢复会携带该头图。登录页、站点标志、头像与空裁切占位图被过滤；访问受阻时保留原链接且不返回假封面。
+- **实测状态**：2026-10-09 使用用户提供的完整分享链接，取得“好爱这种潦草的感觉”的首图（1080×1440），API 图片读取、导出嵌入和恢复后读取均通过。分享参数不纳入源码或文档；保护区基准测试及独立回归测试覆盖首图选择、标志过滤、分享参数保留和图片保存。
+
 ### 🔒 规则 P-007: Shen’s Blog
 - **保护文件**：`backend/services/scrapers/protected/shens_blog.py`
 - **适用域名**：`shens.blog` 及 `www.shens.blog`。
@@ -163,11 +173,11 @@ flowchart LR
     Step5 --> Step6[6. 登记到本文档 & 编写回归测试]
 ```
 
-迁移时还须更新 `protected/__init__.py`、`experimental/__init__.py`、回归测试以及 PRD 的站点列表。当前保护库包含 P-001～P-005、P-007 六个站点例外，试验库包含飞书 E-001 和 Medium E-002；G-001 是单独锁定的通用基础规则。`registry.py` 依次调用匹配的保护库、试验库，未取得结果时使用 G-001。
+迁移时还须更新 `protected/__init__.py`、`experimental/__init__.py`、回归测试以及 PRD 的站点列表。当前保护库包含 P-001～P-005、P-007、P-008 七个站点例外，试验库包含飞书 E-001 和 Medium E-002；G-001 是单独锁定的通用基础规则。`registry.py` 依次调用匹配的保护库、试验库，未取得结果时使用 G-001。
 
 当前回归测试主要覆盖规则状态、URL 匹配及注册列表，不能代替真实网页封面和标题验证。表中的画质描述是解析策略所尝试取得的目标，受原站内容、鉴权、网络和反爬变化影响，不保证每次成功或固定分辨率。
 
-图片资源分为上传图片（`data/assets/`）、网页截图（`data/screenshots/`）和远程封面 URL。JSON 备份不会打包 URL 指向的文件，跨环境恢复与离线边界见 PRD 第 2 节。
+图片资源分为上传图片及站点缓存头图（`data/assets/`）、网页截图（`data/screenshots/`）和远程封面 URL。JSON 备份不会打包 URL 指向的文件，跨环境恢复与离线边界见 PRD 第 2 节。
 
 ## 六、截图反向识别与保护库边界
 
@@ -177,4 +187,4 @@ flowchart LR
 
 微信公众号平台判定优先使用外层文章布局：模型提示同时覆盖无“原创”标签、底栏只有图标和正文内嵌社交截图的情况。OCR 中顶部较大标题、日期时间属地行和底部重复公众号名相互印证时，纠正平台、域名、标题与公众号名，并清除内嵌截图可能带入的 ID 等检索字段；缺少完整几何证据时不强行纠正。`mp.weixin.qq.com` 域名也优先路由微信。搜狗第一轮只按标题查询，兼容解析器可能组合标题片段与公众号名；微信公众号直链不再通过二次抓取签名页面复核，仍有标题匹配和签名链接有效期方面的限制。
 
-这条反向识别链路主要位于 `backend/services/reverse_direct_service.py`、`backend/services/reverse_resolution_search.py`、`backend/services/reverse_instagram_caption.py`、`backend/services/reverse_site_fingerprints.py` 和 `backend/routes/parser.py`。它不属于受保护站点的正向元数据/封面解析规则；反向识别成功后，网页卡元数据仍由原有解析调度获取，P-001～P-005、P-007 与 G-001 的保护约束保持适用。
+这条反向识别链路主要位于 `backend/services/reverse_direct_service.py`、`backend/services/reverse_resolution_search.py`、`backend/services/reverse_instagram_caption.py`、`backend/services/reverse_site_fingerprints.py` 和 `backend/routes/parser.py`。它不属于受保护站点的正向元数据/封面解析规则；反向识别成功后，网页卡元数据仍由原有解析调度获取，P-001～P-005、P-007、P-008 与 G-001 的保护约束保持适用。

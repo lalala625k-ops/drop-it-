@@ -37,20 +37,33 @@ export const RadialCommandMenu: React.FC<Props> = ({ position, items, rightMouse
   useEffect(() => {
     const move = (event: MouseEvent) => {
       if (!rightHeld.current) return;
+      if (!(event.buttons & 2)) { rightHeld.current = false; onClose(); return; }
       hover(pieGestureMoved(position, { x: event.clientX, y: event.clientY })
         ? radialMenuAt({ x: event.clientX, y: event.clientY }, center, scale, items, branchRef.current) : null);
     };
     const release = (event: MouseEvent) => {
       if (event.button !== 2 || !rightHeld.current) return;
       rightHeld.current = false; setActive(null); hideHint();
-      if (!pieGestureMoved(position, { x: event.clientX, y: event.clientY })) return;
+      if (!pieGestureMoved(position, { x: event.clientX, y: event.clientY })) { onClose(); return; }
       const id = radialMenuAt({ x: event.clientX, y: event.clientY }, center, scale, items, branchRef.current);
-      if (id) choose(id); else onClose();
+      const item = radialButtons(items, branchRef.current).find((button) => button.id === id);
+      // Branches expand while held. Releasing always ends the gesture; only
+      // an enabled leaf can execute, including leaves that open an editor.
+      if (item && !item.disabled && !item.children) choose(item.id); else onClose();
     };
+    const cancel = () => { if (rightHeld.current) { rightHeld.current = false; hideHint(); onClose(); } };
     const key = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.preventDefault(); onClose(); } };
-    window.addEventListener('mousemove', move, { passive: true }); window.addEventListener('mouseup', release);
+    window.addEventListener('mousemove', move, { passive: true }); window.addEventListener('mouseup', release, true);
+    // Chromium suppresses mouseup on disabled buttons; pointerup still ends
+    // the gesture there. The held flag prevents duplicate execution.
+    window.addEventListener('pointerup', release, true);
+    window.addEventListener('pointercancel', cancel, true);
+    window.addEventListener('blur', cancel);
     window.addEventListener('keydown', key);
-    return () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', release);
+    return () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', release, true);
+      window.removeEventListener('pointerup', release, true);
+      window.removeEventListener('pointercancel', cancel, true);
+      window.removeEventListener('blur', cancel);
       window.removeEventListener('keydown', key); };
   }, [position.x, position.y, center.x, center.y, scale, items, onAction, onClose]);
   return <div data-radial-menu className={`fixed inset-0 z-[10002] pointer-events-auto select-none ${backdrop ? 'bg-ink/30 backdrop-blur-sm' : ''}`}

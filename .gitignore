@@ -60,3 +60,6 @@ mobile_sync_sandbox/inbox_data/
 
 # Local vendor packages
 backend/.vendor/
+
+# Local demo captures, browser profiles and scratch workspaces
+/video_work/

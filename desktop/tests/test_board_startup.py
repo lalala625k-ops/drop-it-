@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 
 
 class BoardStartupTests(unittest.TestCase):
-    def run_startup(self, new_board, vite_ready):
+    def run_startup(self, new_board, vite_ready, open_file=False):
         # Test the real launcher function without opening a window or reading
         # personal storage. All service/window side effects are mocked.
         source = Path(__file__).resolve().parents[1] / 'app.py'
@@ -30,6 +30,8 @@ class BoardStartupTests(unittest.TestCase):
             ensure_vite_server=MagicMock(return_value=None), threading=MagicMock(),
             WindowApi=MagicMock(), stop_services=MagicMock(), Path=Path, traceback=MagicMock(),
         )
+        if open_file:
+            namespace['sys'].argv.append('--open-file')
         exec(compile(ast.Module(body=[function], type_ignores=[]), str(source), 'exec'), namespace)
         with patch.dict(sys.modules, {'webview': webview, 'uvicorn': uvicorn}), \
              patch('desktop.close_checkpoint.attach_close_checkpoint'), \
@@ -57,6 +59,34 @@ class BoardStartupTests(unittest.TestCase):
         self.assertEqual(uvicorn.Config.call_args.kwargs['port'], 24518)
         self.assertEqual(webview.create_window.call_args.kwargs['url'],
                          'http://127.0.0.1:24518/?desktop=1&new-board=1&board-id=isolated-board')
+
+    def test_open_file_is_requested_only_in_the_child_window(self):
+        for vite_ready in (True, False):
+            _, _, webview = self.run_startup(True, vite_ready, open_file=True)
+            self.assertTrue(webview.create_window.call_args.kwargs['url'].endswith('&open-file=1'))
+        _, _, webview = self.run_startup(False, True, open_file=True)
+        self.assertNotIn('open-file', webview.create_window.call_args.kwargs['url'])
+
+    def test_launching_open_keeps_the_existing_window_and_isolates_the_child_directory(self):
+        source = Path(__file__).resolve().parents[1] / 'app.py'
+        tree = ast.parse(source.read_text(encoding='utf-8'))
+        bridge = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == 'WindowApi')
+        namespace = dict(os=os, sys=SimpleNamespace(executable='C:/qa/python.exe', argv=['--dev']),
+            IS_FROZEN=False, PROJECT_ROOT=Path('C:/qa/source'), __file__=str(source),
+            uuid=SimpleNamespace(uuid4=lambda: SimpleNamespace(hex='a' * 32)),
+            subprocess=MagicMock(), Path=Path)
+        exec(compile(ast.Module(body=[bridge], type_ignores=[]), str(source), 'exec'), namespace)
+        api = namespace['WindowApi']()
+        api._window = MagicMock()
+        with patch.dict(os.environ, {'PINBOARD_DATA_DIR': 'C:/qa/current', 'LOCALAPPDATA': 'C:/qa/local'}):
+            api.new_board(True)
+            self.assertEqual(os.environ['PINBOARD_DATA_DIR'], 'C:/qa/current')
+        api._window.destroy.assert_not_called()
+        launched = namespace['subprocess'].Popen.call_args
+        self.assertIn('--open-file', launched.args[0])
+        self.assertIn('--dev', launched.args[0])
+        self.assertNotEqual(launched.kwargs['env']['PINBOARD_DATA_DIR'], 'C:/qa/current')
+        self.assertEqual(launched.kwargs['env']['PINBOARD_NEW_BOARD'], '1')
 
 
 if __name__ == '__main__':

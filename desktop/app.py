@@ -150,8 +150,8 @@ class WindowApi:
         if self._window:
             self._window.destroy()
 
-    def new_board(self):
-        """Open a second desktop window backed by its own empty workspace."""
+    def new_board(self, open_file=False):
+        """Open an isolated window, optionally choosing a file after startup."""
         env = os.environ.copy()
         env["PINBOARD_NEW_BOARD"] = "1"
         board_id = uuid.uuid4().hex[:12]
@@ -159,6 +159,10 @@ class WindowApi:
         env["PINBOARD_DATA_DIR"] = str(board_root / "InfiniteCanvasNote" / "boards" / board_id)
         command = [str(sys.executable)] if IS_FROZEN else [sys.executable, str(Path(__file__).resolve())]
         command.append("--new-board")
+        if open_file:
+            command.append("--open-file")
+        if "--dev" in sys.argv and not IS_FROZEN:
+            command.append("--dev")
         subprocess.Popen(
             command,
             cwd=str(Path(sys.executable).resolve().parent if IS_FROZEN else PROJECT_ROOT),
@@ -228,6 +232,8 @@ def start_desktop():
     if is_new_board:
         board_id = Path(os.environ["PINBOARD_DATA_DIR"]).name
         board_query = f"&new-board=1&board-id={board_id}"
+        if "--open-file" in sys.argv:
+            board_query += "&open-file=1"
     if use_dev_mode:
         print("[Desktop] 正在检查前端 Vite 热更新服务 (HMR)...")
         try:

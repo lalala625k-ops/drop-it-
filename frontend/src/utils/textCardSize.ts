@@ -1,7 +1,9 @@
+import { measureTextCardHeight } from './measureTextCardHeight';
+
 const FONT = '15px "Ataero Retina OB Edition", "Neue Haas Grotesk Display", Inter, sans-serif';
 const FONT_SIZE = 15;
 const LINE_HEIGHT = 21;
-const PADDING = 28;
+const PADDING = 0;
 const MIN_WIDTH = 120;
 const MAX_WIDTH = 360;
 
@@ -70,5 +72,5 @@ export function textCardSize(content: string): { width: number; height: number }
     totalHeight += visualLines * spec.lineHeight;
   }
 
-  return { width, height: Math.max(60, Math.ceil(totalHeight)) };
+  return { width, height: Math.max(60, measureTextCardHeight(content, width) ?? Math.ceil(totalHeight)) };
 }

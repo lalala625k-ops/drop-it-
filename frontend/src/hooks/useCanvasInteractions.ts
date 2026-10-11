@@ -58,7 +58,7 @@ interface UseCanvasInteractionsProps {
   commitState: (cards: Card[], groups: Group[]) => void;
   pushHistory: (cards: Card[], groups: Group[]) => void;
   showToast: (msg: string) => void;
-  onOpenPieMenu: (card: Card, clientX: number, clientY: number, multiSelectedCardIds?: Set<string>) => void;
+  onOpenPieMenu: (card: Card, clientX: number, clientY: number, multiSelectedCardIds?: Set<string>, rightMouseDown?: boolean) => void;
   onOpenGroupPieMenu: (group: Group, clientX: number, clientY: number, rightMouseDown: boolean) => void;
   onUpdatePieMenuPointer: (clientX: number, clientY: number) => void;
   onReleasePieMenuMouseDown: (clientX: number, clientY: number) => void;
@@ -165,7 +165,7 @@ export function useCanvasInteractions({
         if (targetCard) {
           const multi = selectedCardIdsRef.current.has(targetCard.id) && selectedCardIdsRef.current.size > 1
             ? selectedCardIdsRef.current : undefined;
-          onOpenPieMenu(targetCard, e.clientX, e.clientY, multi);
+          onOpenPieMenu(targetCard, e.clientX, e.clientY, multi, true);
         } else if (targetGroup) onOpenGroupPieMenu(targetGroup, e.clientX, e.clientY, true);
       }
       return;

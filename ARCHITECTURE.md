@@ -126,7 +126,7 @@
 | `SnapGuides.tsx` | 拖动磁吸的水平/垂直辅助虚线 |
 | `SelectionBox.tsx` | 框选矩形 |
 | `CanvasCommandMenu.tsx` | 空白菜单按选择能力构建固定方向的命令项，文件、排版、组使用共享二级分支；粘贴始终读取系统剪贴板 |
-| `RadialCommandMenu.tsx` | 共享两级圆形菜单，中心与分支树状连线、悬停提示、右键轻点保留/划动执行、左键点击、Escape 关闭 |
+| `RadialCommandMenu.tsx` | 共享两级圆形菜单，中心与分支树状连线、悬停提示；按住右键划动展开分支，松开在可用功能上执行并关闭，轻点或无效选择关闭且不执行；快捷键打开后左键选择，Escape 或右键手势中失焦关闭 |
 | `CanvasPinsLayer.tsx` | 在画布表面世界坐标渲染内凹倒角十字星与同心数字圆点图钉，支持框选反馈、Shift 单击切换选中、按住拖拽自由平移、悬停数字弹跳、缩放自适应、点击未选图钉平滑跳转、右键或右上角 ✕ 快速移除；几何与粘贴预览共用 `canvasPinGeometry.ts` |
 | `PinInputModal.tsx` | 极简直角印刷风格的图钉编号选择弹窗，提供 1~8 数字快速选择方格与占用提示，支持键盘单键 1~8 快速确认 |
 | `MarkdownView.tsx` | 全局 4 处指定位置的 Markdown 语法解析与排版渲染组件，严格匹配一级 24px (900)、二级 18px (700) 与正文 15px (400) 字阶 |
@@ -158,7 +158,7 @@
 | `routes/assets.py` | POST `/api/upload-asset` 每次按当前存储目录上传原图，生成成功后才返回缩略图地址；GET `/api/thumbnails/{category}/{filename}` 动态或缓存提供 800px WebP 缩略图 |
 | `services/asset_recovery.py` | 图片读取时按哈希文件名恢复切换目录后遗留在默认目录的原图；只补缺失资源，不覆盖已有文件或恢复其他画布数据，发布空白模式不执行 |
 | `routes/parser.py` | POST `/api/recognize-image` 和 `/api/resolve-image` 支持上传文件、Base64 JSON、原始请求体；GET `/api/fetch-metadata` |
-| `routes/settings.py` | GET/POST `/api/settings/storage-path` 数据目录查询与迁移；POST `/api/storage/save`、POST `/api/storage/open`、GET `/api/storage/load` 负责 `.drop` 保存、原生选择打开与启动读取，并在首次空工作区安装 `desktop/Template/Template一.drop`；旧 `/api/archive/*` 接口保留但当前前端没有导入导出入口 |
+| `routes/settings.py` | GET/POST `/api/settings/storage-path` 数据目录查询与迁移；POST `/api/storage/save`、POST `/api/storage/open`、GET `/api/storage/load` 负责 `.drop` 保存、新画板内部的原生选择打开与启动读取，并在首次空工作区安装 `desktop/Template/Template一.drop`；`drop_last_open_path` 跨窗口记住成功打开的位置；旧 `/api/archive/*` 接口保留但当前前端没有导入导出入口 |
 | `services/storage.py` | SQLite WAL 对象存储、修订号校验、图钉 `meta` 持久化、force_replace_all 全量覆盖还原、旧 JSON 迁移及 Git 快照导出 |
 | `services/template_paths.py` | 按程序所在目录定位 `Files/Template/Template一.drop`；开发时从 `desktop/Template/` 复制初始示例，旧发布包从原 Template 目录复制，保留已有模板，不依赖用户桌面或 PyInstaller 临时解包目录 |
 | `services/thumbnail_service.py` | WebP 800px 缩略图金字塔管道，支持透明通道保留、EXIF 自动校正、原子落盘与已有媒体后台批量预生成 |
@@ -187,6 +187,7 @@
 | `services/scrapers/experimental/__init__.py` | 注册飞书和 Medium 试验解析器 |
 | `services/scrapers/experimental/feishu.py` | E-001：飞书/Lark 文档标题识别，统一返回无封面信息卡 |
 | `services/scrapers/experimental/medium.py` | E-002：读取 Medium 文章元数据；访问受阻时从 URL 生成标题并保留无封面信息卡 |
+| `services/scrapers/protected/xiaohongshu.py`、`xiaohongshu_page.py` | P-008：小红书已锁定规则，读取手机分享页中当前笔记的首图，验证后缓存到当前画板 assets；页面数据解析不执行 JavaScript |
 | `tests/test_protected_scrapers.py` | 保护状态、URL 匹配、注册列表等断言；线上有效性仍需真实 URL 验证 |
 | `data/cards.json` | 旧版数据与独立 Git 备份快照；Windows 运行数据位于 `%LOCALAPPDATA%/InfiniteCanvasNote/data/board.sqlite3` |
 | `data/assets/` | 上传图片二进制文件 |
@@ -218,7 +219,7 @@
 | 保存、备份、恢复 | `utils/storage.ts`、`useCanvasInit.ts`、后端 cards/storage 模块 |
 | 设置微画布与快捷键/文件/恢复/画布偏好 | `SettingsModal.tsx`、`useSettings.ts`、`components/settings/`、后端 `routes/workspaces.py` |
 | `.drop` 工作区保存、存为、打开与读取 | `App.tsx`、`utils/storage.ts`、`useShortcuts.ts`、后端 `routes/settings.py`、`services/drop_file_dialog.py`；Ctrl+S 更新当前文件，Ctrl+Shift+S 使用 Windows 原生保存窗口，右键“保存”悬停展开两个动作，右键“打开”使用原生打开窗口，所选文件通过 config.json 记忆，写入采用原子替换 |
-| 新建画板与首次模板 | `CanvasCommandMenu.tsx`、`App.tsx`、`desktop/app.py`、`desktop/Template/Template一.drop`、后端 `routes/settings.py`；桌面端新画板使用独立窗口和数据目录；开发时独立 Vite 动态端口代理自身后端并同步源码，浏览器端使用独立会话标签 |
+| 新建画板与首次模板 | `CanvasCommandMenu.tsx`、`App.tsx`、`utils/boardWindows.ts`、`desktop/app.py`、`desktop/Template/Template一.drop`、后端 `routes/settings.py`；打开命令先暂存原画板，再通过 `new_board(true)` / `--open-file` 创建独立窗口，在新画板就绪后选文件；请求参数消费后从 URL 移除，避免 F5 再次弹窗。开发时独立 Vite 动态端口代理自身后端并同步源码，浏览器端使用独立会话标签 |
 | 示例文件发布与首次打开目录 | `services/template_paths.py`、`routes/settings.py`、`scripts/build_dropit_installer.py`；发布包只复制指定示例至 EXE 同级的 `Files/Template/`，首次打开默认该目录，首次保存/另存为默认 Files/Save；初次恢复视口与图钉由 `useCanvasInit.ts` 完成 |
 | 浏览器内置示例兜底 | `utils/storage.ts` 中的 `INITIAL_GUIDE_CARDS`、`INITIAL_GUIDE_GROUPS`；桌面端以随包 `.drop` 为准 |
 | 站点元数据 | `scrapers/registry.py`、站点模块；保护范围见台账 |

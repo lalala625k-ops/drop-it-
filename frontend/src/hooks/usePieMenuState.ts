@@ -41,14 +41,15 @@ export function usePieMenuState({
     cardId: string; resolution: ReverseResolution; text: string;
   } | null>(null);
 
-  const openPieMenu = useCallback((card: Card, clientX: number, clientY: number, multiSelectedCardIds?: Set<string>) => {
+  const openPieMenu = useCallback((card: Card, clientX: number, clientY: number,
+    multiSelectedCardIds?: Set<string>, isRightMouseDown = false) => {
     setActivePieMenu({
       target: { kind: 'card', card },
       selectedCardIds: multiSelectedCardIds && multiSelectedCardIds.has(card.id) && multiSelectedCardIds.size > 1
         ? new Set(multiSelectedCardIds) : new Set([card.id]),
       center: { x: clientX, y: clientY },
       pointer: { x: clientX, y: clientY },
-      isRightMouseDown: true,
+      isRightMouseDown,
     });
   }, []);
 

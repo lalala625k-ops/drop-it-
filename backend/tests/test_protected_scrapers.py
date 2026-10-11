@@ -3,12 +3,15 @@
 # If any test fails, it indicates a forbidden modification or regression!
 # ==============================================================================
 
+import json
 import unittest
 from backend.services.scrapers.protected.bilibili import BilibiliScraper
 from backend.services.scrapers.protected.instagram import InstagramScraper
 from backend.services.scrapers.protected.youtube import YoutubeScraper
 from backend.services.scrapers.protected.pinterest import PinterestScraper
 from backend.services.scrapers.protected.x_twitter import XTwitterScraper
+from backend.services.scrapers.protected.xiaohongshu import XiaohongshuScraper
+from backend.services.scrapers.protected.xiaohongshu_page import parse_note_page
 from backend.services.scrapers.experimental.feishu import FeishuScraper
 from backend.services.scrapers.registry import scraper_registry
 
@@ -19,6 +22,7 @@ class TestProtectedScrapers(unittest.TestCase):
         self.youtube = YoutubeScraper()
         self.pinterest = PinterestScraper()
         self.x_twitter = XTwitterScraper()
+        self.xiaohongshu = XiaohongshuScraper()
         self.feishu = FeishuScraper()
 
     # --- P-001: Bilibili Tests ---
@@ -82,10 +86,40 @@ class TestProtectedScrapers(unittest.TestCase):
         self.assertTrue(self.x_twitter.can_handle("https://mobile.twitter.com/i/web/status/123"))
         self.assertFalse(self.x_twitter.can_handle("https://www.youtube.com"))
 
+    # --- P-008: Xiaohongshu Tests ---
+    def test_xiaohongshu_lock_status(self):
+        self.assertEqual(self.xiaohongshu.status, "PROTECTED")
+        self.assertEqual(self.xiaohongshu.name, "xiaohongshu")
+        self.assertNotIn("xiaohongshu", [s.name for s in scraper_registry.experimental_scrapers])
+
+    def test_xiaohongshu_can_handle(self):
+        note_id = "683a642e000000002202a108"
+        self.assertTrue(self.xiaohongshu.can_handle(f"https://www.xiaohongshu.com/explore/{note_id}"))
+        self.assertTrue(self.xiaohongshu.can_handle(f"https://www.xiaohongshu.com/discovery/item/{note_id}"))
+        self.assertTrue(self.xiaohongshu.can_handle("https://xhslink.com/o/example"))
+        self.assertFalse(self.xiaohongshu.can_handle("https://www.xiaohongshu.com/search_result"))
+        self.assertFalse(self.xiaohongshu.can_handle(f"https://xiaohongshu.com.evil.test/explore/{note_id}"))
+
+    def test_xiaohongshu_first_note_cover_gold(self):
+        note_id = "683a642e000000002202a108"
+        detail = "https://sns-webpic-qc.xhscdn.com/expiry/signature/notes_pre_post/first!h5_1080jpg"
+        preview = "https://sns-webpic-qc.xhscdn.com/expiry/signature/notes_pre_post/first!h5_240jpg"
+        state = {"LAUNCHER_SSR_STORE_PAGE_DATA": {"noteData": {
+            "noteId": note_id, "title": "Note title", "desc": "Note description",
+            "imageList": [{"infoList": [{"imageScene": "H5_PRV", "url": preview},
+                                       {"imageScene": "H5_DTL", "url": detail}]},
+                          {"url": "https://sns-webpic-qc.xhscdn.com/expiry/signature/notes_pre_post/second"}],
+        }}}
+        html = ('<meta property="og:image" content="https://picasso-static.xiaohongshu.com/fe-platform/logo.png">'
+                '<script>window.__SETUP_SERVER_STATE__=' + json.dumps(state) + '</script>')
+        self.assertEqual(parse_note_page(html, note_id), {
+            "title": "Note title", "description": "Note description", "images": [detail, preview],
+        })
+
     # --- Registry Dispatch & Priority Tests ---
     def test_registry_protected_list(self):
         names = [s.name for s in scraper_registry.protected_scrapers]
-        self.assertEqual(names, ["bilibili", "instagram", "youtube", "pinterest", "x_twitter", "shens_blog"])
+        self.assertEqual(names, ["bilibili", "instagram", "youtube", "pinterest", "x_twitter", "shens_blog", "xiaohongshu"])
 
 if __name__ == "__main__":
     unittest.main()

@@ -105,6 +105,7 @@ const CardBodyContentInner: React.FC<CardBodyContentProps> = ({
     const size = textCardSize(content);
     const width = size.width * contentScale;
     const height = (size.height + (card.tags?.length ? 32 : 0)) * contentScale;
+    if (!card.sizeLocked) onTextEditingSize?.({ width, height });
     onTextEdit(card.id, {
       content,
       ...(!card.sizeLocked ? { width, height } : {}),
@@ -381,7 +382,8 @@ const CardBodyContentInner: React.FC<CardBodyContentProps> = ({
           }}
         >
           <div
-            className={`flex-1 p-3.5 flex flex-col overflow-hidden bg-paper ${isSelected ? 'pointer-events-auto' : 'pointer-events-none select-none'}`}
+            data-text-body
+            className={`flex-1 min-h-0 p-0 flex flex-col overflow-hidden bg-paper ${isSelected ? 'pointer-events-auto' : 'pointer-events-none select-none'}`}
             style={{ backgroundColor: card.color || undefined }}
             onMouseDown={(event) => {
               if (event.button === 0 && isSelected) {
@@ -425,7 +427,7 @@ const CardBodyContentInner: React.FC<CardBodyContentProps> = ({
                     textInputRef.current?.blur();
                   }
                 }}
-                className="w-full h-full bg-transparent text-ink text-[15px] leading-[1.40] font-retina font-normal text-left resize-none border-0 outline-none p-0 m-0 placeholder:text-ink/40 placeholder:italic overflow-hidden select-text cursor-text"
+                className="w-full h-full min-h-0 bg-transparent text-ink text-[15px] leading-[1.40] font-retina font-normal text-left resize-none border-0 outline-none p-0 m-0 placeholder:text-ink/40 placeholder:italic overflow-auto select-text cursor-text"
                 style={{ overflowWrap: 'anywhere', color: card.textColor || undefined }}
               />
             ) : (
@@ -437,7 +439,7 @@ const CardBodyContentInner: React.FC<CardBodyContentProps> = ({
                 }}
               >
                 {card.content ? (
-                  <MarkdownView content={card.content} color={card.textColor || undefined} />
+                  <MarkdownView content={card.content} color={card.textColor || undefined} style={{ display: 'flow-root' }} />
                 ) : (
                   <span className="italic opacity-40 text-[15px] leading-[1.40] font-retina select-none">空白便签（支持 Markdown）</span>
                 )}

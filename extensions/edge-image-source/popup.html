@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>图片带出处</title><link rel="stylesheet" href="popup.css"></head>
+<body>
+  <header><span class="eyebrow">EDGE / 图片收藏</span><h1>图片带出处<span aria-hidden="true">↗</span></h1></header>
+  <main>
+    <p id="status" role="status" aria-live="polite">在网页图片上右键开始。</p>
+    <section id="empty">
+      <div class="empty-mark" aria-hidden="true">▧ ↗</div>
+      <h2>图片和出处，一起带走。</h2>
+      <ol><li>在网页图片上点击右键。</li><li>选择“复制图片和原链接”。</li><li>切换到目标应用，按 Ctrl+V。<br><span class="muted">macOS 使用 ⌘V。</span></li></ol>
+    </section>
+    <section id="result" hidden>
+      <div class="preview"><img id="preview" alt="最近选中的图片"></div>
+      <div class="metadata"><span id="dimensions"></span><span id="source-kind"></span></div>
+      <label for="source">原链接 <span class="muted">可修改</span></label>
+      <input id="source" type="url" spellcheck="false" autocomplete="off" placeholder="https://…">
+      <a id="open-source" target="_blank" rel="noopener noreferrer">打开出处 ↗</a>
+      <button id="copy" class="primary">复制图片和原链接</button>
+      <button id="save-html">保存图片与出处 · HTML</button>
+      <div class="secondary"><button id="save-png">仅保存 PNG</button><button id="clear">清除预览</button></div>
+    </section>
+    <p class="note">粘贴效果取决于目标应用。保存为 HTML，可离线查看图片和可点击出处。</p>
+  </main>
+  <footer>图片 / 富文本 / 原链接</footer>
+  <script type="module" src="popup.js"></script>
+</body></html>
